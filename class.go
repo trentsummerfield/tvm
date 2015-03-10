@@ -24,12 +24,11 @@ func (m NameAndType) String() string {
 }
 
 type UTF8String struct {
-	Length uint16
-	Bytes  []uint8
+	Contents string
 }
 
 func (m UTF8String) String() string {
-	return fmt.Sprintf("UTF8: %v", string(m.Bytes))
+	return fmt.Sprintf("UTF8: %v", m.Contents)
 }
 
 type ClassInfo struct {
@@ -100,18 +99,20 @@ func parseNameAndType(buf *bytes.Reader) (c NameAndType, err error) {
 }
 
 func parseUTF8String(buf *bytes.Reader) (c UTF8String, err error) {
-	err = binary.Read(buf, binary.BigEndian, &c.Length)
+	var length uint16
+	err = binary.Read(buf, binary.BigEndian, &length)
 	if err != nil {
 		return
 	}
-	c.Bytes = make([]byte, c.Length)
+	bytes := make([]byte, length)
 	var i uint16
-	for i = 0; i < c.Length; i++ {
-		c.Bytes[i], err = buf.ReadByte()
+	for i = 0; i < length; i++ {
+		bytes[i], err = buf.ReadByte()
 		if err != nil {
 			return
 		}
 	}
+	c.Contents = string(bytes)
 	return
 }
 
