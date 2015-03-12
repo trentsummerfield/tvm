@@ -32,7 +32,10 @@ func (s *ClassSuite) TestClassMagicAndVersions(c *C) {
 
 func (s *ClassSuite) TestClassConstantPool(c *C) {
 	pool := s.class.constantPoolItems
-	c.Check(len(pool), Equals, 29)
+	// The constant pool count is 1 more than the actual number of elements in the array.
+	// Elements are index from 1 to constantPoolCount-1
+	// This makes no sense.
+	c.Check(len(pool), Equals, 28)
 	c.Check(pool[0], Equals, MethodRef{6, 15})
 	c.Check(pool[1], Equals, FieldRef{16, 17})
 	c.Check(pool[2], Equals, StringConstant{18})

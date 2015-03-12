@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 )
 
 type ConstantPoolItem interface {
@@ -49,10 +48,6 @@ type FieldRef struct {
 }
 
 func (_ FieldRef) isConstantPoolItem() {}
-
-func (m FieldRef) String() string {
-	return fmt.Sprintf("Field: %v, %v", m.ClassIndex, m.NameAndTypeIndex)
-}
 
 type StringConstant struct {
 	UTF8Index uint16
@@ -129,7 +124,7 @@ func parseConstantPoolItem(buf *bytes.Reader) (ConstantPoolItem, error) {
 	} else if tag == 12 {
 		return parseNameAndType(buf)
 	}
-	return nil, nil
+	panic("Unknown constant pool item")
 }
 
 func parse(b []byte) (c RawClass, err error) {
@@ -151,6 +146,7 @@ func parse(b []byte) (c RawClass, err error) {
 	if err != nil {
 		return
 	}
+	constantPoolCount -= 1
 	c.constantPoolItems = make([]ConstantPoolItem, constantPoolCount)
 	var i uint16
 	for i = 0; i < constantPoolCount; i++ {
