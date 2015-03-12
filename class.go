@@ -30,6 +30,8 @@ type RawClass struct {
 	accessFlags       AccessFlags
 	thisClass         uint16
 	superClass        uint16
+	interfaces        []uint16
+	fields            []uint16
 }
 
 type NameAndType struct {
@@ -175,5 +177,19 @@ func parse(b []byte) (c RawClass, err error) {
 	if err != nil {
 		return
 	}
+	var interfacesCount uint16
+	err = binary.Read(buf, binary.BigEndian, &interfacesCount)
+	if err != nil {
+		return
+	}
+	c.interfaces = make([]uint16, interfacesCount)
+
+	var fieldsCount uint16
+	err = binary.Read(buf, binary.BigEndian, &fieldsCount)
+	if err != nil {
+		return
+	}
+	c.fields = make([]uint16, fieldsCount)
+
 	return
 }

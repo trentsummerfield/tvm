@@ -74,3 +74,8 @@ func (s *ClassSuite) TestThisClassAndSuperClass(c *C) {
 	c.Check(s.class.thisClass, Equals, uint16(5))
 	c.Check(s.class.superClass, Equals, uint16(6))
 }
+
+func (s *ClassSuite) TestInterfacesAndFields(c *C) {
+	c.Check(len(s.class.interfaces), Equals, 0)
+	c.Check(len(s.class.fields), Equals, 0)
+}
