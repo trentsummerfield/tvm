@@ -70,6 +70,7 @@ func (s *ClassSuite) TestAccessFlags(c *C) {
 	c.Check(s.class.accessFlags, Equals, Public|Super)
 }
 
-func (s *ClassSuite) TestThisClass(c *C) {
+func (s *ClassSuite) TestThisClassAndSuperClass(c *C) {
 	c.Check(s.class.thisClass, Equals, uint16(5))
+	c.Check(s.class.superClass, Equals, uint16(6))
 }

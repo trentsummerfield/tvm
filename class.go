@@ -29,6 +29,7 @@ type RawClass struct {
 	constantPoolItems []ConstantPoolItem
 	accessFlags       AccessFlags
 	thisClass         uint16
+	superClass        uint16
 }
 
 type NameAndType struct {
@@ -167,6 +168,10 @@ func parse(b []byte) (c RawClass, err error) {
 		return
 	}
 	err = binary.Read(buf, binary.BigEndian, &c.thisClass)
+	if err != nil {
+		return
+	}
+	err = binary.Read(buf, binary.BigEndian, &c.superClass)
 	if err != nil {
 		return
 	}
