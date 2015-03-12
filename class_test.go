@@ -31,9 +31,8 @@ func (s *ClassSuite) TestClassMagicAndVersions(c *C) {
 }
 
 func (s *ClassSuite) TestClassConstantPool(c *C) {
-	count := s.class.constantPoolCount
 	pool := s.class.constantPoolItems
-	c.Check(count, Equals, uint16(29))
+	c.Check(len(pool), Equals, 29)
 	c.Check(pool[0], Equals, MethodRef{6, 15})
 	c.Check(pool[1], Equals, FieldRef{16, 17})
 	c.Check(pool[2], Equals, StringConstant{18})

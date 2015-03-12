@@ -14,7 +14,6 @@ type RawClass struct {
 	magic             uint32
 	minorVersion      uint16
 	majorVersion      uint16
-	constantPoolCount uint16
 	constantPoolItems []ConstantPoolItem
 }
 
@@ -147,13 +146,14 @@ func parse(b []byte) (c RawClass, err error) {
 	if err != nil {
 		return
 	}
-	err = binary.Read(buf, binary.BigEndian, &c.constantPoolCount)
+	var constantPoolCount uint16
+	err = binary.Read(buf, binary.BigEndian, &constantPoolCount)
 	if err != nil {
 		return
 	}
-	c.constantPoolItems = make([]ConstantPoolItem, c.constantPoolCount)
+	c.constantPoolItems = make([]ConstantPoolItem, constantPoolCount)
 	var i uint16
-	for i = 0; i < c.constantPoolCount; i++ {
+	for i = 0; i < constantPoolCount; i++ {
 		c.constantPoolItems[i], err = parseConstantPoolItem(buf)
 		if err != nil {
 			return
