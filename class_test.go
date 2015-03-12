@@ -65,3 +65,7 @@ func (s *ClassSuite) TestClassConstantPool(c *C) {
 	c.Check(pool[26], Equals, UTF8String{"println"})
 	c.Check(pool[27], Equals, UTF8String{"(Ljava/lang/String;)V"})
 }
+
+func (s *ClassSuite) TestAccessFlags(c *C) {
+	c.Check(s.class.accessFlags, Equals, Public|Super)
+}

@@ -9,11 +9,25 @@ type ConstantPoolItem interface {
 	isConstantPoolItem()
 }
 
+type AccessFlags uint16
+
+const (
+	Public     AccessFlags = 0x0001
+	Final                  = 0x0010
+	Super                  = 0x0020
+	Interface              = 0x0200
+	Abstract               = 0x0400
+	Synthetic              = 0x1000
+	Annotation             = 0x2000
+	Enum                   = 0x4000
+)
+
 type RawClass struct {
 	magic             uint32
 	minorVersion      uint16
 	majorVersion      uint16
 	constantPoolItems []ConstantPoolItem
+	accessFlags       AccessFlags
 }
 
 type NameAndType struct {
@@ -146,6 +160,10 @@ func parse(b []byte) (c RawClass, err error) {
 		if err != nil {
 			return
 		}
+	}
+	err = binary.Read(buf, binary.BigEndian, &c.accessFlags)
+	if err != nil {
+		return
 	}
 	return
 }
