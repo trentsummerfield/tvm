@@ -60,8 +60,8 @@ func parseMethodRef(buf *bytes.Reader) (m MethodRef, err error) {
 	return
 }
 
-func parseFieldRef(buf *bytes.Reader) (m FieldRef, err error) {
-	err = binary.Read(buf, binary.BigEndian, &m)
+func parseFieldRef(buf *bytes.Reader) (f FieldRef, err error) {
+	err = binary.Read(buf, binary.BigEndian, &f)
 	return
 }
 
@@ -75,12 +75,12 @@ func parseClassInfo(buf *bytes.Reader) (c ClassInfo, err error) {
 	return
 }
 
-func parseNameAndType(buf *bytes.Reader) (c NameAndType, err error) {
-	err = binary.Read(buf, binary.BigEndian, &c)
+func parseNameAndType(buf *bytes.Reader) (n NameAndType, err error) {
+	err = binary.Read(buf, binary.BigEndian, &n)
 	return
 }
 
-func parseUTF8String(buf *bytes.Reader) (c UTF8String, err error) {
+func parseUTF8String(buf *bytes.Reader) (s UTF8String, err error) {
 	var length uint16
 	err = binary.Read(buf, binary.BigEndian, &length)
 	if err != nil {
@@ -94,7 +94,7 @@ func parseUTF8String(buf *bytes.Reader) (c UTF8String, err error) {
 			return
 		}
 	}
-	c.Contents = string(bytes)
+	s.Contents = string(bytes)
 	return
 }
 
