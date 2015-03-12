@@ -55,14 +55,6 @@ type StringConstant struct {
 
 func (_ StringConstant) isConstantPoolItem() {}
 
-type ParseError struct {
-	reason string
-}
-
-func (e ParseError) Error() string {
-	return e.reason
-}
-
 func parseMethodRef(buf *bytes.Reader) (m MethodRef, err error) {
 	err = binary.Read(buf, binary.BigEndian, &m)
 	return
