@@ -69,3 +69,7 @@ func (s *ClassSuite) TestClassConstantPool(c *C) {
 func (s *ClassSuite) TestAccessFlags(c *C) {
 	c.Check(s.class.accessFlags, Equals, Public|Super)
 }
+
+func (s *ClassSuite) TestThisClass(c *C) {
+	c.Check(s.class.thisClass, Equals, uint16(5))
+}
