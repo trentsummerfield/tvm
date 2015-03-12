@@ -6,12 +6,16 @@ import (
 	"fmt"
 )
 
-type Class struct {
+type ConstantPoolItem interface {
+	isConstantPoolItem()
+}
+
+type RawClass struct {
 	magic             uint32
 	minorVersion      uint16
 	majorVersion      uint16
 	constantPoolCount uint16
-	constantPoolItems []interface{}
+	constantPoolItems []ConstantPoolItem
 }
 
 type NameAndType struct {
@@ -19,39 +23,33 @@ type NameAndType struct {
 	DescriptorIndex uint16
 }
 
-func (m NameAndType) String() string {
-	return fmt.Sprintf("NameAndType: %v, %v", m.NameIndex, m.DescriptorIndex)
-}
+func (_ NameAndType) isConstantPoolItem() {}
 
 type UTF8String struct {
 	Contents string
 }
 
-func (m UTF8String) String() string {
-	return fmt.Sprintf("UTF8: %v", m.Contents)
-}
+func (_ UTF8String) isConstantPoolItem() {}
 
 type ClassInfo struct {
 	NameIndex uint16
 }
 
-func (m ClassInfo) String() string {
-	return fmt.Sprintf("Class: %v", m.NameIndex)
-}
+func (_ ClassInfo) isConstantPoolItem() {}
 
 type MethodRef struct {
 	ClassIndex       uint16
 	NameAndTypeIndex uint16
 }
 
-func (m MethodRef) String() string {
-	return fmt.Sprintf("Method: %v, %v", m.ClassIndex, m.NameAndTypeIndex)
-}
+func (_ MethodRef) isConstantPoolItem() {}
 
 type FieldRef struct {
 	ClassIndex       uint16
 	NameAndTypeIndex uint16
 }
+
+func (_ FieldRef) isConstantPoolItem() {}
 
 func (m FieldRef) String() string {
 	return fmt.Sprintf("Field: %v, %v", m.ClassIndex, m.NameAndTypeIndex)
@@ -61,9 +59,7 @@ type StringConstant struct {
 	UTF8Index uint16
 }
 
-func (m StringConstant) String() string {
-	return fmt.Sprintf("String: %v", m.UTF8Index)
-}
+func (_ StringConstant) isConstantPoolItem() {}
 
 type ParseError struct {
 	reason string
@@ -116,7 +112,7 @@ func parseUTF8String(buf *bytes.Reader) (c UTF8String, err error) {
 	return
 }
 
-func parseConstantPoolItem(buf *bytes.Reader) (interface{}, error) {
+func parseConstantPoolItem(buf *bytes.Reader) (ConstantPoolItem, error) {
 	tag, err := buf.ReadByte()
 	if err != nil {
 		return nil, err
@@ -134,10 +130,10 @@ func parseConstantPoolItem(buf *bytes.Reader) (interface{}, error) {
 	} else if tag == 12 {
 		return parseNameAndType(buf)
 	}
-	return tag, nil
+	return nil, nil
 }
 
-func parse(b []byte) (c Class, err error) {
+func parse(b []byte) (c RawClass, err error) {
 	buf := bytes.NewReader(b)
 	err = binary.Read(buf, binary.BigEndian, &c.magic)
 	if err != nil {
@@ -155,7 +151,7 @@ func parse(b []byte) (c Class, err error) {
 	if err != nil {
 		return
 	}
-	c.constantPoolItems = make([]interface{}, c.constantPoolCount)
+	c.constantPoolItems = make([]ConstantPoolItem, c.constantPoolCount)
 	var i uint16
 	for i = 0; i < c.constantPoolCount; i++ {
 		c.constantPoolItems[i], err = parseConstantPoolItem(buf)

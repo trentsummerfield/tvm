@@ -12,7 +12,7 @@ func Test(t *testing.T) {
 }
 
 type ClassSuite struct {
-	class Class
+	class RawClass
 }
 
 var _ = Suite(&ClassSuite{})
