@@ -13,6 +13,7 @@ type AccessFlags uint16
 
 const (
 	Public     AccessFlags = 0x0001
+	Static                 = 0x0008
 	Final                  = 0x0010
 	Super                  = 0x0020
 	Interface              = 0x0200
@@ -21,6 +22,19 @@ const (
 	Annotation             = 0x2000
 	Enum                   = 0x4000
 )
+
+type Code struct {
+	maxStack  uint16
+	maxLocals uint16
+	code      []byte
+}
+
+type Method struct {
+	accessFlags     AccessFlags
+	nameIndex       uint16
+	descriptorIndex uint16
+	code            Code
+}
 
 type RawClass struct {
 	magic             uint32
@@ -32,6 +46,7 @@ type RawClass struct {
 	superClass        uint16
 	interfaces        []uint16
 	fields            []uint16
+	methods           []Method
 }
 
 type NameAndType struct {
@@ -137,6 +152,24 @@ func parseConstantPoolItem(buf *bytes.Reader) (ConstantPoolItem, error) {
 	panic("Unknown constant pool item")
 }
 
+func parseCode(buf *bytes.Reader, length uint32) (c Code) {
+	binary.Read(buf, binary.BigEndian, &c.maxStack)
+	binary.Read(buf, binary.BigEndian, &c.maxLocals)
+	var codeLength uint32
+	binary.Read(buf, binary.BigEndian, &codeLength)
+	c.code = make([]byte, codeLength)
+	for k := 0; k < len(c.code); k++ {
+		binary.Read(buf, binary.BigEndian, &c.code[k])
+	}
+	for k := uint32(8) + codeLength; k < length; k++ {
+		var bytes uint8
+		if binary.Read(buf, binary.BigEndian, &bytes) != nil {
+			panic("Error reading code block")
+		}
+	}
+	return
+}
+
 func parse(b []byte) (c RawClass, err error) {
 	buf := bytes.NewReader(b)
 	err = binary.Read(buf, binary.BigEndian, &c.magic)
@@ -190,6 +223,53 @@ func parse(b []byte) (c RawClass, err error) {
 		return
 	}
 	c.fields = make([]uint16, fieldsCount)
+
+	var methodsCount uint16
+	err = binary.Read(buf, binary.BigEndian, &methodsCount)
+	if err != nil {
+		return
+	}
+	c.methods = make([]Method, methodsCount)
+	for i = 0; i < methodsCount; i++ {
+		err = binary.Read(buf, binary.BigEndian, &c.methods[i].accessFlags)
+		err = binary.Read(buf, binary.BigEndian, &c.methods[i].nameIndex)
+		err = binary.Read(buf, binary.BigEndian, &c.methods[i].descriptorIndex)
+		var attrCount uint16
+		err = binary.Read(buf, binary.BigEndian, &attrCount)
+		if err != nil {
+			return
+		}
+		for j := uint16(0); j < attrCount; j++ {
+			var name uint16
+			var length uint32
+			err = binary.Read(buf, binary.BigEndian, &name)
+			err = binary.Read(buf, binary.BigEndian, &length)
+			actualName := (c.constantPoolItems[name-1]).(UTF8String)
+			if actualName.Contents == "Code" {
+				c.methods[i].code = parseCode(buf, length)
+			} else {
+				for k := uint32(0); k < length; k++ {
+					var bytes uint8
+					err = binary.Read(buf, binary.BigEndian, &bytes)
+				}
+			}
+		}
+	}
+	var attrCount uint16
+	err = binary.Read(buf, binary.BigEndian, &attrCount)
+	if err != nil {
+		return
+	}
+	for j := uint16(0); j < attrCount; j++ {
+		var name uint16
+		var length uint32
+		err = binary.Read(buf, binary.BigEndian, &name)
+		err = binary.Read(buf, binary.BigEndian, &length)
+		for k := uint32(0); k < length; k++ {
+			var bytes uint8
+			err = binary.Read(buf, binary.BigEndian, &bytes)
+		}
+	}
 
 	return
 }

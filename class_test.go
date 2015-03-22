@@ -79,3 +79,24 @@ func (s *ClassSuite) TestInterfacesAndFields(c *C) {
 	c.Check(len(s.class.interfaces), Equals, 0)
 	c.Check(len(s.class.fields), Equals, 0)
 }
+
+func (s *ClassSuite) TestMethods(c *C) {
+	c.Check(len(s.class.methods), Equals, 2)
+	c.Check(s.class.methods[0].accessFlags, Equals, Public)
+	c.Check(s.class.methods[0].nameIndex, Equals, uint16(7))
+	c.Check(s.class.methods[0].descriptorIndex, Equals, uint16(8))
+
+	c.Check(s.class.methods[1].accessFlags, Equals, Public|Static)
+	c.Check(s.class.methods[1].nameIndex, Equals, uint16(11))
+	c.Check(s.class.methods[1].descriptorIndex, Equals, uint16(12))
+}
+
+func (s *ClassSuite) TestCode(c *C) {
+	c.Check(s.class.methods[0].code.maxStack, Equals, uint16(1))
+	c.Check(s.class.methods[0].code.maxLocals, Equals, uint16(1))
+	c.Check(len(s.class.methods[0].code.code), Equals, 5)
+
+	c.Check(s.class.methods[1].code.maxStack, Equals, uint16(2))
+	c.Check(s.class.methods[1].code.maxLocals, Equals, uint16(1))
+	c.Check(len(s.class.methods[1].code.code), Equals, 9)
+}
