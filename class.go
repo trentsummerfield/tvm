@@ -16,6 +16,7 @@ const (
 	Static                 = 0x0008
 	Final                  = 0x0010
 	Super                  = 0x0020
+	Native                 = 0x0100
 	Interface              = 0x0200
 	Abstract               = 0x0400
 	Synthetic              = 0x1000
@@ -47,6 +48,16 @@ type RawClass struct {
 	interfaces        []uint16
 	fields            []uint16
 	methods           []Method
+}
+
+type Class struct {
+	Name string
+}
+
+func fromRawClass(raw RawClass) (class Class) {
+	classInfo := raw.constantPoolItems[raw.thisClass-1].(ClassInfo)
+	class.Name = raw.constantPoolItems[classInfo.NameIndex-1].(UTF8String).Contents
+	return
 }
 
 type NameAndType struct {
