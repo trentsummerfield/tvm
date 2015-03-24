@@ -41,7 +41,7 @@ func main() {
 			n := class.constantPoolItems[nt.NameIndex-1].(UTF8String).Contents
 			meth := class.getMethod(n)
 			if (meth.accessFlags&Native) != 0 && n == "print" {
-				index := class.constantPoolItems[stack[0]-1].(StringConstant).UTF8Index
+				index := class.constantPoolItems[stack[len(stack)-1]-1].(StringConstant).UTF8Index
 				fmt.Print(class.constantPoolItems[index-1].(UTF8String).Contents)
 			} else {
 				panic(fmt.Sprintf("I don't know how to call method %v", n))
