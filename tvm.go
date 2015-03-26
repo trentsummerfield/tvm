@@ -29,10 +29,12 @@ func (class *RawClass) execute(methodName string, stack []byte) {
 	for {
 		instruction := method.code.code[pc]
 		pc += 1
-		if instruction == 18 {
+		switch instruction {
+		case 18:
 			stack = append(stack, method.code.code[pc])
 			pc += 1
-		} else if instruction == 184 {
+			break
+		case 184:
 			var i uint16
 			i = uint16(method.code.code[pc]) << 8
 			pc += 1
@@ -42,9 +44,10 @@ func (class *RawClass) execute(methodName string, stack []byte) {
 			nt := class.constantPoolItems[m.NameAndTypeIndex-1].(NameAndType)
 			n := class.constantPoolItems[nt.NameIndex-1].(UTF8String).Contents
 			class.execute(n, stack)
-		} else if instruction == 177 {
 			break
-		} else {
+		case 177:
+			return
+		default:
 			panic(fmt.Sprintf("Unknow instruction: %v", instruction))
 		}
 	}
