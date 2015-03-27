@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+set -e
+
+go install
+
+for f in tests/*.java; do
+	echo "Running $f"
+	DIR=`mktemp -d -t tvm-tests-XXXXXXX` || (echo "Failed to create tmp directory"; exit 1)
+	javac -d $DIR $f || (echo "Failed to compile"; exit 1)
+	diff <(tvm ${DIR}/*) tests/`basename -s ".java" $f`.out
+done
