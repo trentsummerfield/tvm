@@ -18,7 +18,7 @@ type ClassSuite struct {
 var _ = Suite(&ClassSuite{})
 
 func (s *ClassSuite) SetUpSuite(c *C) {
-	bytes, err := ioutil.ReadFile("Hello.class")
+	bytes, err := ioutil.ReadFile("tests/data/Hello.class")
 	c.Assert(err, IsNil)
 	s.class, err = parse(bytes)
 	c.Assert(err, IsNil)
