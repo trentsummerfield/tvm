@@ -142,25 +142,39 @@ func parseUTF8String(buf *bytes.Reader) (s UTF8String, err error) {
 	return
 }
 
+type ConstantPoolTag uint8
+
+const (
+	CP_UTF8String  ConstantPoolTag = 1
+	CP_ClassInfo                   = 7
+	CP_String                      = 8
+	CP_Field                       = 9
+	CP_Method                      = 10
+	CP_NameAndType                 = 12
+)
+
 func parseConstantPoolItem(buf *bytes.Reader) (ConstantPoolItem, error) {
-	tag, err := buf.ReadByte()
+	var tag ConstantPoolTag
+	err := binary.Read(buf, binary.BigEndian, &tag)
 	if err != nil {
-		return nil, err
+		panic("Could not read constant pool tag")
 	}
-	if tag == 10 {
-		return parseMethodRef(buf)
-	} else if tag == 9 {
-		return parseFieldRef(buf)
-	} else if tag == 8 {
-		return parseStringConstant(buf)
-	} else if tag == 7 {
-		return parseClassInfo(buf)
-	} else if tag == 1 {
+	switch tag {
+	case CP_UTF8String:
 		return parseUTF8String(buf)
-	} else if tag == 12 {
+	case CP_ClassInfo:
+		return parseClassInfo(buf)
+	case CP_String:
+		return parseStringConstant(buf)
+	case CP_Field:
+		return parseFieldRef(buf)
+	case CP_Method:
+		return parseMethodRef(buf)
+	case CP_NameAndType:
 		return parseNameAndType(buf)
+	default:
+		panic("Unknown constant pool item")
 	}
-	panic("Unknown constant pool item")
 }
 
 func parseCode(buf *bytes.Reader, length uint32) (c Code) {
