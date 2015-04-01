@@ -2,7 +2,8 @@
 
 set -e
 
-go install
+go install ./...
+go test ./...
 
 for f in tests/*.java; do
 	echo "Running $f"

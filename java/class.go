@@ -1,8 +1,9 @@
-package main
+package java
 
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 )
 
 type ConstantPoolItem interface {
@@ -60,120 +61,6 @@ func fromRawClass(raw RawClass) (class Class) {
 	return
 }
 
-type NameAndType struct {
-	NameIndex       uint16
-	DescriptorIndex uint16
-}
-
-func (_ NameAndType) isConstantPoolItem() {}
-
-type UTF8String struct {
-	Contents string
-}
-
-func (_ UTF8String) isConstantPoolItem() {}
-
-type ClassInfo struct {
-	NameIndex uint16
-}
-
-func (_ ClassInfo) isConstantPoolItem() {}
-
-type MethodRef struct {
-	ClassIndex       uint16
-	NameAndTypeIndex uint16
-}
-
-func (_ MethodRef) isConstantPoolItem() {}
-
-type FieldRef struct {
-	ClassIndex       uint16
-	NameAndTypeIndex uint16
-}
-
-func (_ FieldRef) isConstantPoolItem() {}
-
-type StringConstant struct {
-	UTF8Index uint16
-}
-
-func (_ StringConstant) isConstantPoolItem() {}
-
-func parseMethodRef(buf *bytes.Reader) ConstantPoolItem {
-	var m MethodRef
-	binary.Read(buf, binary.BigEndian, &m)
-	return m
-}
-
-func parseFieldRef(buf *bytes.Reader) ConstantPoolItem {
-	var f FieldRef
-	binary.Read(buf, binary.BigEndian, &f)
-	return f
-}
-
-func parseStringConstant(buf *bytes.Reader) ConstantPoolItem {
-	var s StringConstant
-	binary.Read(buf, binary.BigEndian, &s)
-	return s
-}
-
-func parseClassInfo(buf *bytes.Reader) ConstantPoolItem {
-	var c ClassInfo
-	binary.Read(buf, binary.BigEndian, &c)
-	return c
-}
-
-func parseNameAndType(buf *bytes.Reader) ConstantPoolItem {
-	var n NameAndType
-	binary.Read(buf, binary.BigEndian, &n)
-	return n
-}
-
-func parseUTF8String(buf *bytes.Reader) ConstantPoolItem {
-	var length uint16
-	err := binary.Read(buf, binary.BigEndian, &length)
-	if err != nil {
-		panic("Could not parse UTF8 String")
-	}
-	bytes := make([]byte, length)
-	var i uint16
-	for i = 0; i < length; i++ {
-		bytes[i], err = buf.ReadByte()
-		if err != nil {
-			panic("Could not parse UTF8 String")
-		}
-	}
-	return UTF8String{string(bytes)}
-}
-
-func unknownConstantPoolItem(_ *bytes.Reader) ConstantPoolItem {
-	panic("Unknown constant pool item")
-}
-
-func parseConstantPoolItem(buf *bytes.Reader) ConstantPoolItem {
-	parsers := []func(*bytes.Reader) ConstantPoolItem{
-		unknownConstantPoolItem,
-		parseUTF8String,
-		unknownConstantPoolItem,
-		unknownConstantPoolItem,
-		unknownConstantPoolItem,
-		unknownConstantPoolItem,
-		unknownConstantPoolItem,
-		parseClassInfo,
-		parseStringConstant,
-		parseFieldRef,
-		parseMethodRef,
-		unknownConstantPoolItem,
-		parseNameAndType,
-	}
-	var tag uint8
-	err := binary.Read(buf, binary.BigEndian, &tag)
-	if err != nil {
-		panic("Could not read constant pool tag")
-	}
-	return parsers[tag](buf)
-}
-
 func parseCode(buf *bytes.Reader, length uint32) (c Code) {
 	binary.Read(buf, binary.BigEndian, &c.maxStack)
 	binary.Read(buf, binary.BigEndian, &c.maxLocals)
@@ -192,7 +79,7 @@ func parseCode(buf *bytes.Reader, length uint32) (c Code) {
 	return
 }
 
-func parse(b []byte) (c RawClass, err error) {
+func ParseClass(b []byte) (c RawClass, err error) {
 	buf := bytes.NewReader(b)
 	err = binary.Read(buf, binary.BigEndian, &c.magic)
 	if err != nil {
@@ -291,4 +178,51 @@ func parse(b []byte) (c RawClass, err error) {
 	}
 
 	return
+}
+
+func (c *RawClass) getMethod(name string) Method {
+	for _, m := range c.methods {
+		n := c.constantPoolItems[m.nameIndex-1].(UTF8String).Contents
+		if n == name {
+			return m
+		}
+	}
+	panic(fmt.Sprintf("Could not find method called %v", name))
+}
+
+func (class *RawClass) Execute(methodName string, stack []byte) {
+	method := class.getMethod(methodName)
+
+	if (method.accessFlags&Native) != 0 && methodName == "print" {
+		index := class.constantPoolItems[stack[len(stack)-1]-1].(StringConstant).UTF8Index
+		fmt.Print(class.constantPoolItems[index-1].(UTF8String).Contents)
+		return
+	}
+
+	pc := 0
+	for {
+		instruction := method.code.code[pc]
+		pc += 1
+		switch instruction {
+		case 18:
+			stack = append(stack, method.code.code[pc])
+			pc += 1
+			break
+		case 184:
+			var i uint16
+			i = uint16(method.code.code[pc]) << 8
+			pc += 1
+			i |= uint16(method.code.code[pc])
+			pc += 1
+			m := class.constantPoolItems[i-1].(MethodRef)
+			nt := class.constantPoolItems[m.NameAndTypeIndex-1].(NameAndType)
+			n := class.constantPoolItems[nt.NameIndex-1].(UTF8String).Contents
+			class.Execute(n, stack)
+			break
+		case 177:
+			return
+		default:
+			panic(fmt.Sprintf("Unknow instruction: %v", instruction))
+		}
+	}
 }
