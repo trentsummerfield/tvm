@@ -6,14 +6,14 @@ import (
 	"fmt"
 )
 
-type ConstantPoolItem interface {
+type constantPoolItem interface {
 	isConstantPoolItem()
 }
 
-type AccessFlags uint16
+type accessFlags uint16
 
 const (
-	Public     AccessFlags = 0x0001
+	Public     accessFlags = 0x0001
 	Static                 = 0x0008
 	Final                  = 0x0010
 	Super                  = 0x0020
@@ -25,43 +25,33 @@ const (
 	Enum                   = 0x4000
 )
 
-type Code struct {
+type code struct {
 	maxStack  uint16
 	maxLocals uint16
 	code      []byte
 }
 
-type Method struct {
-	accessFlags     AccessFlags
+type method struct {
+	accessFlags     accessFlags
 	nameIndex       uint16
 	descriptorIndex uint16
-	code            Code
+	code            code
 }
 
-type RawClass struct {
+type class struct {
 	magic             uint32
 	minorVersion      uint16
 	majorVersion      uint16
-	constantPoolItems []ConstantPoolItem
-	accessFlags       AccessFlags
+	constantPoolItems []constantPoolItem
+	accessFlags       accessFlags
 	thisClass         uint16
 	superClass        uint16
 	interfaces        []uint16
 	fields            []uint16
-	methods           []Method
+	methods           []method
 }
 
-type Class struct {
-	Name string
-}
-
-func fromRawClass(raw RawClass) (class Class) {
-	classInfo := raw.constantPoolItems[raw.thisClass-1].(ClassInfo)
-	class.Name = raw.constantPoolItems[classInfo.NameIndex-1].(UTF8String).Contents
-	return
-}
-
-func parseCode(buf *bytes.Reader, length uint32) (c Code) {
+func parseCode(buf *bytes.Reader, length uint32) (c code) {
 	binary.Read(buf, binary.BigEndian, &c.maxStack)
 	binary.Read(buf, binary.BigEndian, &c.maxLocals)
 	var codeLength uint32
@@ -79,7 +69,7 @@ func parseCode(buf *bytes.Reader, length uint32) (c Code) {
 	return
 }
 
-func ParseClass(b []byte) (c RawClass, err error) {
+func parseClass(b []byte) (c class, err error) {
 	buf := bytes.NewReader(b)
 	err = binary.Read(buf, binary.BigEndian, &c.magic)
 	if err != nil {
@@ -98,8 +88,8 @@ func ParseClass(b []byte) (c RawClass, err error) {
 	if err != nil {
 		return
 	}
-	constantPoolCount -= 1
-	c.constantPoolItems = make([]ConstantPoolItem, constantPoolCount)
+	constantPoolCount--
+	c.constantPoolItems = make([]constantPoolItem, constantPoolCount)
 	var i uint16
 	for i = 0; i < constantPoolCount; i++ {
 		c.constantPoolItems[i] = parseConstantPoolItem(buf)
@@ -135,7 +125,7 @@ func ParseClass(b []byte) (c RawClass, err error) {
 	if err != nil {
 		return
 	}
-	c.methods = make([]Method, methodsCount)
+	c.methods = make([]method, methodsCount)
 	for i = 0; i < methodsCount; i++ {
 		err = binary.Read(buf, binary.BigEndian, &c.methods[i].accessFlags)
 		err = binary.Read(buf, binary.BigEndian, &c.methods[i].nameIndex)
@@ -150,8 +140,8 @@ func ParseClass(b []byte) (c RawClass, err error) {
 			var length uint32
 			err = binary.Read(buf, binary.BigEndian, &name)
 			err = binary.Read(buf, binary.BigEndian, &length)
-			actualName := (c.constantPoolItems[name-1]).(UTF8String)
-			if actualName.Contents == "Code" {
+			actualName := (c.constantPoolItems[name-1]).(utf8String)
+			if actualName.contents == "Code" {
 				c.methods[i].code = parseCode(buf, length)
 			} else {
 				for k := uint32(0); k < length; k++ {
@@ -180,9 +170,9 @@ func ParseClass(b []byte) (c RawClass, err error) {
 	return
 }
 
-func (c *RawClass) getMethod(name string) Method {
+func (c *class) getMethod(name string) method {
 	for _, m := range c.methods {
-		n := c.constantPoolItems[m.nameIndex-1].(UTF8String).Contents
+		n := c.constantPoolItems[m.nameIndex-1].(utf8String).contents
 		if n == name {
 			return m
 		}
@@ -190,34 +180,34 @@ func (c *RawClass) getMethod(name string) Method {
 	panic(fmt.Sprintf("Could not find method called %v", name))
 }
 
-func (class *RawClass) Execute(methodName string, stack []byte) {
+func (class *class) execute(methodName string, stack []byte) {
 	method := class.getMethod(methodName)
 
 	if (method.accessFlags&Native) != 0 && methodName == "print" {
-		index := class.constantPoolItems[stack[len(stack)-1]-1].(StringConstant).UTF8Index
-		fmt.Print(class.constantPoolItems[index-1].(UTF8String).Contents)
+		index := class.constantPoolItems[stack[len(stack)-1]-1].(stringConstant).utf8Index
+		fmt.Print(class.constantPoolItems[index-1].(utf8String).contents)
 		return
 	}
 
 	pc := 0
 	for {
 		instruction := method.code.code[pc]
-		pc += 1
+		pc++
 		switch instruction {
 		case 18:
 			stack = append(stack, method.code.code[pc])
-			pc += 1
+			pc++
 			break
 		case 184:
 			var i uint16
 			i = uint16(method.code.code[pc]) << 8
-			pc += 1
+			pc++
 			i |= uint16(method.code.code[pc])
-			pc += 1
-			m := class.constantPoolItems[i-1].(MethodRef)
-			nt := class.constantPoolItems[m.NameAndTypeIndex-1].(NameAndType)
-			n := class.constantPoolItems[nt.NameIndex-1].(UTF8String).Contents
-			class.Execute(n, stack)
+			pc++
+			m := class.constantPoolItems[i-1].(methodRef)
+			nt := class.constantPoolItems[m.nameAndTypeIndex-1].(nameAndType)
+			n := class.constantPoolItems[nt.nameIndex-1].(utf8String).contents
+			class.execute(n, stack)
 			break
 		case 177:
 			return

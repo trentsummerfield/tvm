@@ -5,76 +5,27 @@ import (
 	"encoding/binary"
 )
 
-type NameAndType struct {
-	NameIndex       uint16
-	DescriptorIndex uint16
+type nameAndType struct {
+	nameIndex       uint16
+	descriptorIndex uint16
 }
 
-func (_ NameAndType) isConstantPoolItem() {}
+func (_ nameAndType) isConstantPoolItem() {}
 
-type UTF8String struct {
-	Contents string
+func parseNameAndType(buf *bytes.Reader) constantPoolItem {
+	var nameIndex, descriptorIndex uint16
+	binary.Read(buf, binary.BigEndian, &nameIndex)
+	binary.Read(buf, binary.BigEndian, &descriptorIndex)
+	return nameAndType{nameIndex, descriptorIndex}
 }
 
-func (_ UTF8String) isConstantPoolItem() {}
-
-type ClassInfo struct {
-	NameIndex uint16
+type utf8String struct {
+	contents string
 }
 
-func (_ ClassInfo) isConstantPoolItem() {}
+func (_ utf8String) isConstantPoolItem() {}
 
-type MethodRef struct {
-	ClassIndex       uint16
-	NameAndTypeIndex uint16
-}
-
-func (_ MethodRef) isConstantPoolItem() {}
-
-type FieldRef struct {
-	ClassIndex       uint16
-	NameAndTypeIndex uint16
-}
-
-func (_ FieldRef) isConstantPoolItem() {}
-
-type StringConstant struct {
-	UTF8Index uint16
-}
-
-func (_ StringConstant) isConstantPoolItem() {}
-
-func parseMethodRef(buf *bytes.Reader) ConstantPoolItem {
-	var m MethodRef
-	binary.Read(buf, binary.BigEndian, &m)
-	return m
-}
-
-func parseFieldRef(buf *bytes.Reader) ConstantPoolItem {
-	var f FieldRef
-	binary.Read(buf, binary.BigEndian, &f)
-	return f
-}
-
-func parseStringConstant(buf *bytes.Reader) ConstantPoolItem {
-	var s StringConstant
-	binary.Read(buf, binary.BigEndian, &s)
-	return s
-}
-
-func parseClassInfo(buf *bytes.Reader) ConstantPoolItem {
-	var c ClassInfo
-	binary.Read(buf, binary.BigEndian, &c)
-	return c
-}
-
-func parseNameAndType(buf *bytes.Reader) ConstantPoolItem {
-	var n NameAndType
-	binary.Read(buf, binary.BigEndian, &n)
-	return n
-}
-
-func parseUTF8String(buf *bytes.Reader) ConstantPoolItem {
+func parseUTF8String(buf *bytes.Reader) constantPoolItem {
 	var length uint16
 	err := binary.Read(buf, binary.BigEndian, &length)
 	if err != nil {
@@ -88,15 +39,67 @@ func parseUTF8String(buf *bytes.Reader) ConstantPoolItem {
 			panic("Could not parse UTF8 String")
 		}
 	}
-	return UTF8String{string(bytes)}
+	return utf8String{string(bytes)}
 }
 
-func unknownConstantPoolItem(_ *bytes.Reader) ConstantPoolItem {
+type classInfo struct {
+	nameIndex uint16
+}
+
+func (_ classInfo) isConstantPoolItem() {}
+
+func parseClassInfo(buf *bytes.Reader) constantPoolItem {
+	var nameIndex uint16
+	binary.Read(buf, binary.BigEndian, &nameIndex)
+	return classInfo{nameIndex}
+}
+
+type methodRef struct {
+	classIndex       uint16
+	nameAndTypeIndex uint16
+}
+
+func (_ methodRef) isConstantPoolItem() {}
+
+func parseMethodRef(buf *bytes.Reader) constantPoolItem {
+	var classIndex, nameAndTypeIndex uint16
+	binary.Read(buf, binary.BigEndian, &classIndex)
+	binary.Read(buf, binary.BigEndian, &nameAndTypeIndex)
+	return methodRef{classIndex, nameAndTypeIndex}
+}
+
+type fieldRef struct {
+	classIndex       uint16
+	nameAndTypeIndex uint16
+}
+
+func (_ fieldRef) isConstantPoolItem() {}
+
+func parseFieldRef(buf *bytes.Reader) constantPoolItem {
+	var classIndex, nameAndTypeIndex uint16
+	binary.Read(buf, binary.BigEndian, &classIndex)
+	binary.Read(buf, binary.BigEndian, &nameAndTypeIndex)
+	return fieldRef{classIndex, nameAndTypeIndex}
+}
+
+type stringConstant struct {
+	utf8Index uint16
+}
+
+func (_ stringConstant) isConstantPoolItem() {}
+
+func parseStringConstant(buf *bytes.Reader) constantPoolItem {
+	var utf8Index uint16
+	binary.Read(buf, binary.BigEndian, &utf8Index)
+	return stringConstant{utf8Index}
+}
+
+func unknownConstantPoolItem(_ *bytes.Reader) constantPoolItem {
 	panic("Unknown constant pool item")
 }
 
-func parseConstantPoolItem(buf *bytes.Reader) ConstantPoolItem {
-	parsers := []func(*bytes.Reader) ConstantPoolItem{
+func parseConstantPoolItem(buf *bytes.Reader) constantPoolItem {
+	parsers := []func(*bytes.Reader) constantPoolItem{
 		unknownConstantPoolItem,
 		parseUTF8String,
 		unknownConstantPoolItem,
