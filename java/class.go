@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"log"
 )
 
 type constantPoolItem interface {
@@ -35,6 +36,7 @@ type method struct {
 	accessFlags     accessFlags
 	nameIndex       uint16
 	descriptorIndex uint16
+	sig             []string
 	code            code
 }
 
@@ -130,6 +132,11 @@ func parseClass(b []byte) (c class, err error) {
 		err = binary.Read(buf, binary.BigEndian, &c.methods[i].accessFlags)
 		err = binary.Read(buf, binary.BigEndian, &c.methods[i].nameIndex)
 		err = binary.Read(buf, binary.BigEndian, &c.methods[i].descriptorIndex)
+
+		var sig string
+		sig = c.constantPoolItems[c.methods[i].descriptorIndex-1].(utf8String).contents
+		c.methods[i].sig = parseSigniture(sig)
+
 		var attrCount uint16
 		err = binary.Read(buf, binary.BigEndian, &attrCount)
 		if err != nil {
@@ -178,4 +185,64 @@ func (c *class) getMethod(name string) method {
 		}
 	}
 	panic(fmt.Sprintf("Could not find method called %v", name))
+}
+
+func (m method) name(c class) string {
+	return c.constantPoolItems[m.nameIndex-1].(utf8String).contents
+}
+
+func (m method) numArgs() int {
+	return len(m.sig) - 1
+}
+
+func parseSigniture(sig string) []string {
+	s := make([]string, 0)
+	className := false
+	for _, c := range sig {
+		//TODO: save the name of the class. Maybe
+		if className {
+			if c == ';' {
+				className = false
+			}
+			continue
+		}
+		switch c {
+		case '(', ')', '[':
+			break
+		case 'B':
+			s = append(s, "byte")
+			break
+		case 'C':
+			s = append(s, "char")
+			break
+		case 'D':
+			s = append(s, "double")
+			break
+		case 'F':
+			s = append(s, "float")
+			break
+		case 'I':
+			s = append(s, "int")
+			break
+		case 'J':
+			s = append(s, "long")
+			break
+		case 'S':
+			s = append(s, "short")
+			break
+		case 'Z':
+			s = append(s, "boolean")
+			break
+		case 'V':
+			s = append(s, "void")
+			break
+		case 'L':
+			s = append(s, "reference")
+			className = true
+			break
+		default:
+			log.Panicf("Can't parse signiture: %s", sig)
+		}
+	}
+	return s
 }

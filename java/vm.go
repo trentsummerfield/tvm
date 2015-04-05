@@ -32,30 +32,41 @@ func (vm *VM) LoadClass(path string) {
 
 func (vm *VM) Run() {
 	var frame frame
+	//TODO: push the actual command line arguments onto the stack for the main method.
+	frame.stack.pushString(utf8String{""})
 	vm.execute(vm.classes[0], "main", &frame)
 }
 
 func nativePrintString(f *frame) {
-	str := f.stack.popString()
+	str := f.variables[0].(utf8String)
 	fmt.Print(str.contents)
 	return
 }
 
 func nativePrintInteger(f *frame) {
-	i := f.stack.popInt32()
+	i := int32(f.variables[0].(stackInt32))
 	fmt.Print(i)
 	return
 }
 
-func (vm *VM) execute(class class, methodName string, frame *frame) {
+func (vm *VM) execute(class class, methodName string, previousFrame *frame) {
 	method := class.getMethod(methodName)
+	var frame frame
+	if (method.accessFlags & Native) != 0 {
+		frame.variables = make([]stackItem, method.numArgs())
+	} else {
+		frame.variables = make([]stackItem, method.code.maxLocals)
+	}
+	for i := method.numArgs() - 1; i >= 0; i-- {
+		frame.variables[i] = previousFrame.stack.pop()
+	}
 
 	if (method.accessFlags & Native) != 0 {
 		native := vm.nativeMethods[methodName]
 		if native == nil {
 			log.Panicf("Unknown native method %s", methodName)
 		}
-		native(frame)
+		native(&frame)
 		return
 	}
 
@@ -69,6 +80,9 @@ func (vm *VM) execute(class class, methodName string, frame *frame) {
 		case 5:
 			frame.stack.pushInt32(2)
 			break
+		case 8:
+			frame.stack.pushInt32(5)
+			break
 		case 16:
 			frame.stack.pushInt32(int32(method.code.code[pc]))
 			pc++
@@ -78,6 +92,22 @@ func (vm *VM) execute(class class, methodName string, frame *frame) {
 			frame.stack.pushString(str)
 			pc++
 			break
+		case 26:
+			frame.stack.pushInt32(int32(frame.variables[0].(stackInt32)))
+		case 27:
+			frame.stack.pushInt32(int32(frame.variables[1].(stackInt32)))
+		case 60:
+			frame.variables[1] = frame.stack.pop()
+		case 96:
+			//TODO: make sure we do overflow correctly
+			x := frame.stack.popInt32()
+			y := frame.stack.popInt32()
+			frame.stack.pushInt32(x + y)
+		case 172:
+			previousFrame.stack.push(frame.stack.pop())
+			return
+		case 177:
+			return
 		case 184:
 			var i uint16
 			i = uint16(method.code.code[pc]) << 8
@@ -87,10 +117,8 @@ func (vm *VM) execute(class class, methodName string, frame *frame) {
 			m := class.constantPoolItems[i-1].(methodRef)
 			nt := class.constantPoolItems[m.nameAndTypeIndex-1].(nameAndType)
 			n := class.constantPoolItems[nt.nameIndex-1].(utf8String).contents
-			vm.execute(class, n, frame)
+			vm.execute(class, n, &frame)
 			break
-		case 177:
-			return
 		default:
 			panic(fmt.Sprintf("Unknown instruction: %v", instruction))
 		}

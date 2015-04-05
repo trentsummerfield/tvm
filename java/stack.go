@@ -15,6 +15,9 @@ func (s *stack) push(e stackItem) {
 }
 
 func (s *stack) pop() stackItem {
+	if s.size == 0 {
+		panic("Cannot pop from an empty stack")
+	}
 	e := s.items[s.size-1]
 	s.size--
 	s.items = s.items[:s.size]
