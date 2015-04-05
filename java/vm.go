@@ -8,11 +8,16 @@ import (
 
 type VM struct {
 	classes       []class
-	nativeMethods map[string](func(*stack))
+	nativeMethods map[string](func(*frame))
+}
+
+type frame struct {
+	stack     stack
+	variables []stackItem
 }
 
 func NewVM() (vm VM) {
-	vm.nativeMethods = map[string](func(*stack)){
+	vm.nativeMethods = map[string](func(*frame)){
 		"print":    nativePrintString,
 		"printInt": nativePrintInteger,
 	}
@@ -26,23 +31,23 @@ func (vm *VM) LoadClass(path string) {
 }
 
 func (vm *VM) Run() {
-	var stack stack
-	vm.execute(vm.classes[0], "main", &stack)
+	var frame frame
+	vm.execute(vm.classes[0], "main", &frame)
 }
 
-func nativePrintString(s *stack) {
-	str := s.popString()
+func nativePrintString(f *frame) {
+	str := f.stack.popString()
 	fmt.Print(str.contents)
 	return
 }
 
-func nativePrintInteger(s *stack) {
-	i := s.popInt32()
+func nativePrintInteger(f *frame) {
+	i := f.stack.popInt32()
 	fmt.Print(i)
 	return
 }
 
-func (vm *VM) execute(class class, methodName string, stack *stack) {
+func (vm *VM) execute(class class, methodName string, frame *frame) {
 	method := class.getMethod(methodName)
 
 	if (method.accessFlags & Native) != 0 {
@@ -50,7 +55,7 @@ func (vm *VM) execute(class class, methodName string, stack *stack) {
 		if native == nil {
 			log.Panicf("Unknown native method %s", methodName)
 		}
-		native(stack)
+		native(frame)
 		return
 	}
 
@@ -62,15 +67,15 @@ func (vm *VM) execute(class class, methodName string, stack *stack) {
 		case 0:
 			break
 		case 5:
-			stack.pushInt32(2)
+			frame.stack.pushInt32(2)
 			break
 		case 16:
-			stack.pushInt32(int32(method.code.code[pc]))
+			frame.stack.pushInt32(int32(method.code.code[pc]))
 			pc++
 		case 18:
 			strRef := class.constantPoolItems[method.code.code[pc]-1].(stringConstant)
 			str := class.constantPoolItems[strRef.utf8Index-1].(utf8String)
-			stack.pushString(str)
+			frame.stack.pushString(str)
 			pc++
 			break
 		case 184:
@@ -82,7 +87,7 @@ func (vm *VM) execute(class class, methodName string, stack *stack) {
 			m := class.constantPoolItems[i-1].(methodRef)
 			nt := class.constantPoolItems[m.nameAndTypeIndex-1].(nameAndType)
 			n := class.constantPoolItems[nt.nameIndex-1].(utf8String).contents
-			vm.execute(class, n, stack)
+			vm.execute(class, n, frame)
 			break
 		case 177:
 			return
