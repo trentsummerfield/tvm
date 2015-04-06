@@ -34,7 +34,8 @@ func (vm *VM) Run() {
 	var frame frame
 	//TODO: push the actual command line arguments onto the stack for the main method.
 	frame.stack.pushString(utf8String{""})
-	vm.execute(vm.classes[0], "main", &frame)
+	//TODO: this is obviously completely wrong
+	vm.execute(vm.classes[0].getName(), "main", &frame)
 }
 
 func nativePrintString(f *frame) {
@@ -49,7 +50,19 @@ func nativePrintInteger(f *frame) {
 	return
 }
 
-func (vm *VM) execute(class class, methodName string, previousFrame *frame) {
+func (vm *VM) resolveClass(name string) class {
+	for _, class := range vm.classes {
+		if class.getName() == name {
+			return class
+		}
+	}
+	//TODO: raise the appropriate java exception
+	log.Panicf("Could not resolve class %s\n", name)
+	return class{}
+}
+
+func (vm *VM) execute(className string, methodName string, previousFrame *frame) {
+	class := vm.resolveClass(className)
 	method := class.getMethod(methodName)
 	var frame frame
 	if (method.accessFlags & Native) != 0 {
@@ -115,9 +128,11 @@ func (vm *VM) execute(class class, methodName string, previousFrame *frame) {
 			i |= uint16(method.code.code[pc])
 			pc++
 			m := class.constantPoolItems[i-1].(methodRef)
+			ct := class.constantPoolItems[m.classIndex-1].(classInfo)
+			c := class.constantPoolItems[ct.nameIndex-1].(utf8String).contents
 			nt := class.constantPoolItems[m.nameAndTypeIndex-1].(nameAndType)
 			n := class.constantPoolItems[nt.nameIndex-1].(utf8String).contents
-			vm.execute(class, n, &frame)
+			vm.execute(c, n, &frame)
 			break
 		default:
 			panic(fmt.Sprintf("Unknown instruction: %v", instruction))

@@ -8,9 +8,9 @@ import (
 
 func main() {
 	flag.Parse()
-	filename := flag.Arg(0)
-
 	vm := java.NewVM()
-	vm.LoadClass(filename)
+	for _, class := range flag.Args() {
+		vm.LoadClass(class)
+	}
 	vm.Run()
 }

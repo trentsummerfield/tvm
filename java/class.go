@@ -187,6 +187,12 @@ func (c *class) getMethod(name string) method {
 	panic(fmt.Sprintf("Could not find method called %v", name))
 }
 
+func (c *class) getName() string {
+	info := c.constantPoolItems[c.thisClass-1].(classInfo)
+	name := c.constantPoolItems[info.nameIndex-1].(utf8String)
+	return name.contents
+}
+
 func (m method) name(c class) string {
 	return c.constantPoolItems[m.nameIndex-1].(utf8String).contents
 }
