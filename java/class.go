@@ -86,7 +86,7 @@ func parseClass(b []byte) (c class, err error) {
 	c.constantPoolItems = make([]constantPoolItem, constantPoolCount)
 	var i uint16
 	for i = 0; i < constantPoolCount; i++ {
-		c.constantPoolItems[i] = parseConstantPoolItem(buf)
+		c.constantPoolItems[i] = parseConstantPoolItem(&c, buf)
 	}
 	err = binary.Read(buf, binary.BigEndian, &c.accessFlags)
 	if err != nil {
@@ -184,6 +184,22 @@ func (c *class) getName() string {
 	info := c.constantPoolItems[c.thisClass-1].(classInfo)
 	name := c.constantPoolItems[info.nameIndex-1].(utf8String)
 	return name.contents
+}
+
+func (c *class) getMethodRefAt(index uint16) methodRef {
+	return c.constantPoolItems[index-1].(methodRef)
+}
+
+func (m methodRef) methodName() string {
+	nt := m.containingClass.constantPoolItems[m.nameAndTypeIndex-1].(nameAndType)
+	n := m.containingClass.constantPoolItems[nt.nameIndex-1].(utf8String).contents
+	return n
+}
+
+func (m methodRef) className() string {
+	ct := m.containingClass.constantPoolItems[m.classIndex-1].(classInfo)
+	c := m.containingClass.constantPoolItems[ct.nameIndex-1].(utf8String).contents
+	return c
 }
 
 func parseSigniture(sig string) []string {

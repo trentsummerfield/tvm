@@ -137,12 +137,8 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			pc++
 			i |= uint16(method.code.code[pc])
 			pc++
-			m := class.constantPoolItems[i-1].(methodRef)
-			ct := class.constantPoolItems[m.classIndex-1].(classInfo)
-			c := class.constantPoolItems[ct.nameIndex-1].(utf8String).contents
-			nt := class.constantPoolItems[m.nameAndTypeIndex-1].(nameAndType)
-			n := class.constantPoolItems[nt.nameIndex-1].(utf8String).contents
-			vm.execute(c, n, &frame)
+			methodRef := class.getMethodRefAt(i)
+			vm.execute(methodRef.className(), methodRef.methodName(), &frame)
 			break
 		default:
 			panic(fmt.Sprintf("Unknown instruction: %v", instruction))

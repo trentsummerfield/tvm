@@ -12,7 +12,7 @@ type nameAndType struct {
 
 func (_ nameAndType) isConstantPoolItem() {}
 
-func parseNameAndType(buf *bytes.Reader) constantPoolItem {
+func parseNameAndType(c *class, buf *bytes.Reader) constantPoolItem {
 	var nameIndex, descriptorIndex uint16
 	binary.Read(buf, binary.BigEndian, &nameIndex)
 	binary.Read(buf, binary.BigEndian, &descriptorIndex)
@@ -25,7 +25,7 @@ type utf8String struct {
 
 func (_ utf8String) isConstantPoolItem() {}
 
-func parseUTF8String(buf *bytes.Reader) constantPoolItem {
+func parseUTF8String(c *class, buf *bytes.Reader) constantPoolItem {
 	var length uint16
 	err := binary.Read(buf, binary.BigEndian, &length)
 	if err != nil {
@@ -48,24 +48,25 @@ type classInfo struct {
 
 func (_ classInfo) isConstantPoolItem() {}
 
-func parseClassInfo(buf *bytes.Reader) constantPoolItem {
+func parseClassInfo(c *class, buf *bytes.Reader) constantPoolItem {
 	var nameIndex uint16
 	binary.Read(buf, binary.BigEndian, &nameIndex)
 	return classInfo{nameIndex}
 }
 
 type methodRef struct {
+	containingClass  *class
 	classIndex       uint16
 	nameAndTypeIndex uint16
 }
 
 func (_ methodRef) isConstantPoolItem() {}
 
-func parseMethodRef(buf *bytes.Reader) constantPoolItem {
+func parseMethodRef(c *class, buf *bytes.Reader) constantPoolItem {
 	var classIndex, nameAndTypeIndex uint16
 	binary.Read(buf, binary.BigEndian, &classIndex)
 	binary.Read(buf, binary.BigEndian, &nameAndTypeIndex)
-	return methodRef{classIndex, nameAndTypeIndex}
+	return methodRef{c, classIndex, nameAndTypeIndex}
 }
 
 type fieldRef struct {
@@ -75,7 +76,7 @@ type fieldRef struct {
 
 func (_ fieldRef) isConstantPoolItem() {}
 
-func parseFieldRef(buf *bytes.Reader) constantPoolItem {
+func parseFieldRef(c *class, buf *bytes.Reader) constantPoolItem {
 	var classIndex, nameAndTypeIndex uint16
 	binary.Read(buf, binary.BigEndian, &classIndex)
 	binary.Read(buf, binary.BigEndian, &nameAndTypeIndex)
@@ -88,18 +89,18 @@ type stringConstant struct {
 
 func (_ stringConstant) isConstantPoolItem() {}
 
-func parseStringConstant(buf *bytes.Reader) constantPoolItem {
+func parseStringConstant(c *class, buf *bytes.Reader) constantPoolItem {
 	var utf8Index uint16
 	binary.Read(buf, binary.BigEndian, &utf8Index)
 	return stringConstant{utf8Index}
 }
 
-func unknownConstantPoolItem(_ *bytes.Reader) constantPoolItem {
+func unknownConstantPoolItem(_ *class, _ *bytes.Reader) constantPoolItem {
 	panic("Unknown constant pool item")
 }
 
-func parseConstantPoolItem(buf *bytes.Reader) constantPoolItem {
-	parsers := []func(*bytes.Reader) constantPoolItem{
+func parseConstantPoolItem(c *class, buf *bytes.Reader) constantPoolItem {
+	parsers := []func(*class, *bytes.Reader) constantPoolItem{
 		unknownConstantPoolItem,
 		parseUTF8String,
 		unknownConstantPoolItem,
@@ -119,5 +120,5 @@ func parseConstantPoolItem(buf *bytes.Reader) constantPoolItem {
 	if err != nil {
 		panic("Could not read constant pool tag")
 	}
-	return parsers[tag](buf)
+	return parsers[tag](c, buf)
 }
