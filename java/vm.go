@@ -46,7 +46,7 @@ func nativePrintString(f *frame) {
 
 func nativePrintInteger(f *frame) {
 	i := int32(f.variables[0].(stackInt32))
-	fmt.Print(i)
+	fmt.Println(i)
 	return
 }
 
@@ -116,6 +116,11 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			x := frame.stack.popInt32()
 			y := frame.stack.popInt32()
 			frame.stack.pushInt32(x + y)
+		case 100:
+			//TODO: make sure we do underflow correctly
+			x := frame.stack.popInt32()
+			y := frame.stack.popInt32()
+			frame.stack.pushInt32(y - x)
 		case 172:
 			previousFrame.stack.push(frame.stack.pop())
 			return
