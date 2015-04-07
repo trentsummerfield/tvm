@@ -1,0 +1,16 @@
+Items still outstanding
+
+- object instantiation
+- integer multiplication
+- integer division
+- floating point maths
+- handle long and double taking up 2 variable slots
+- main method determination
+- jar files
+- inner classes
+- interfaces
+- stdlib (rt.jar?)
+- instruction array instead of switch statement?
+- proper handling of inheritence
+- static initialization
+- fields
