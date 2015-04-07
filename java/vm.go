@@ -61,9 +61,7 @@ func (vm *VM) resolveClass(name string) class {
 	return class{}
 }
 
-func (vm *VM) execute(className string, methodName string, previousFrame *frame) {
-	class := vm.resolveClass(className)
-	method := class.getMethod(methodName)
+func newFrame(method method, previousFrame *frame) frame {
 	var frame frame
 	if (method.accessFlags & Native) != 0 {
 		frame.variables = make([]stackItem, method.numArgs())
@@ -73,6 +71,13 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 	for i := method.numArgs() - 1; i >= 0; i-- {
 		frame.variables[i] = previousFrame.stack.pop()
 	}
+	return frame
+}
+
+func (vm *VM) execute(className string, methodName string, previousFrame *frame) {
+	class := vm.resolveClass(className)
+	method := class.getMethod(methodName)
+	frame := newFrame(method, previousFrame)
 
 	if (method.accessFlags & Native) != 0 {
 		native := vm.nativeMethods[methodName]

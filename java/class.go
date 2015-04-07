@@ -32,14 +32,6 @@ type code struct {
 	code      []byte
 }
 
-type method struct {
-	accessFlags     accessFlags
-	nameIndex       uint16
-	descriptorIndex uint16
-	sig             []string
-	code            code
-}
-
 type class struct {
 	magic             uint32
 	minorVersion      uint16
@@ -129,13 +121,14 @@ func parseClass(b []byte) (c class, err error) {
 	}
 	c.methods = make([]method, methodsCount)
 	for i = 0; i < methodsCount; i++ {
+		c.methods[i].class = c
 		err = binary.Read(buf, binary.BigEndian, &c.methods[i].accessFlags)
 		err = binary.Read(buf, binary.BigEndian, &c.methods[i].nameIndex)
 		err = binary.Read(buf, binary.BigEndian, &c.methods[i].descriptorIndex)
 
 		var sig string
 		sig = c.constantPoolItems[c.methods[i].descriptorIndex-1].(utf8String).contents
-		c.methods[i].sig = parseSigniture(sig)
+		c.methods[i].signiture = parseSigniture(sig)
 
 		var attrCount uint16
 		err = binary.Read(buf, binary.BigEndian, &attrCount)
@@ -191,14 +184,6 @@ func (c *class) getName() string {
 	info := c.constantPoolItems[c.thisClass-1].(classInfo)
 	name := c.constantPoolItems[info.nameIndex-1].(utf8String)
 	return name.contents
-}
-
-func (m method) name(c class) string {
-	return c.constantPoolItems[m.nameIndex-1].(utf8String).contents
-}
-
-func (m method) numArgs() int {
-	return len(m.sig) - 1
 }
 
 func parseSigniture(sig string) []string {
