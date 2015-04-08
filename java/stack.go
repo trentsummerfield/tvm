@@ -46,6 +46,10 @@ func (s *stack) popInt32() int32 {
 	return int32(s.pop().(javaInt))
 }
 
+func (i javaInt) unbox() int32 {
+	return int32(i)
+}
+
 type javaByte byte
 
 func (_ javaByte) isJavaValue() {}

@@ -119,11 +119,11 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 		case 18:
 			strRef := class.constantPoolItems[pc.nextByte()-1].(stringConstant)
 			str := class.constantPoolItems[strRef.utf8Index-1].(utf8String)
-			frame.stack.pushString(str)
+			frame.stack.push(str)
 		case 26:
-			frame.stack.pushInt32(int32(frame.variables[0].(javaInt)))
+			frame.stack.push(frame.variables[0])
 		case 27:
-			frame.stack.pushInt32(int32(frame.variables[1].(javaInt)))
+			frame.stack.push(frame.variables[1])
 		case 60:
 			frame.variables[1] = frame.stack.pop()
 		case 96:
@@ -151,11 +151,10 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			return
 		case 184:
 			var i uint16
-			i = uint16(pc.nextByte()) << 8
+			i |= uint16(pc.nextByte()) << 8
 			i |= uint16(pc.nextByte())
 			methodRef := class.getMethodRefAt(i)
 			vm.execute(methodRef.className(), methodRef.methodName(), &frame)
-			break
 		default:
 			panic(fmt.Sprintf("Unknown instruction: %v", instruction))
 		}
