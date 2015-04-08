@@ -94,13 +94,10 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 		pc++
 		switch instruction {
 		case 0:
-			break
 		case 5:
 			frame.stack.pushInt32(2)
-			break
 		case 8:
 			frame.stack.pushInt32(5)
-			break
 		case 16:
 			frame.stack.pushInt32(int32(method.code.code[pc]))
 			pc++
@@ -109,7 +106,6 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			str := class.constantPoolItems[strRef.utf8Index-1].(utf8String)
 			frame.stack.pushString(str)
 			pc++
-			break
 		case 26:
 			frame.stack.pushInt32(int32(frame.variables[0].(stackInt32)))
 		case 27:
