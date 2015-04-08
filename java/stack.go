@@ -1,20 +1,20 @@
 package java
 
 type stack struct {
-	items []stackItem
+	items []javaValue
 	size  uint
 }
 
-type stackItem interface {
-	isStackItem()
+type javaValue interface {
+	isJavaValue()
 }
 
-func (s *stack) push(e stackItem) {
+func (s *stack) push(e javaValue) {
 	s.items = append(s.items, e)
 	s.size++
 }
 
-func (s *stack) pop() stackItem {
+func (s *stack) pop() javaValue {
 	if s.size == 0 {
 		panic("Cannot pop from an empty stack")
 	}
@@ -24,7 +24,7 @@ func (s *stack) pop() stackItem {
 	return e
 }
 
-func (_ utf8String) isStackItem() {}
+func (_ utf8String) isJavaValue() {}
 
 func (s *stack) pushString(str utf8String) {
 	s.push(str)
@@ -34,26 +34,26 @@ func (s *stack) popString() utf8String {
 	return s.pop().(utf8String)
 }
 
-type stackInt32 int32
+type javaInt int32
 
-func (_ stackInt32) isStackItem() {}
+func (_ javaInt) isJavaValue() {}
 
 func (s *stack) pushInt32(i int32) {
-	s.push(stackInt32(i))
+	s.push(javaInt(i))
 }
 
 func (s *stack) popInt32() int32 {
-	return int32(s.pop().(stackInt32))
+	return int32(s.pop().(javaInt))
 }
 
-type stackByte byte
+type javaByte byte
 
-func (_ stackByte) isStackItem() {}
+func (_ javaByte) isJavaValue() {}
 
 func (s *stack) pushByte(i byte) {
-	s.push(stackByte(i))
+	s.push(javaByte(i))
 }
 
 func (s *stack) popByte() byte {
-	return byte(s.pop().(stackByte))
+	return byte(s.pop().(javaByte))
 }

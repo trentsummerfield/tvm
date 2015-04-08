@@ -13,7 +13,7 @@ type VM struct {
 
 type frame struct {
 	stack     stack
-	variables []stackItem
+	variables []javaValue
 }
 
 func NewVM() (vm VM) {
@@ -45,7 +45,7 @@ func nativePrintString(f *frame) {
 }
 
 func nativePrintInteger(f *frame) {
-	i := int32(f.variables[0].(stackInt32))
+	i := int32(f.variables[0].(javaInt))
 	fmt.Println(i)
 	return
 }
@@ -64,14 +64,31 @@ func (vm *VM) resolveClass(name string) class {
 func newFrame(method method, previousFrame *frame) frame {
 	var frame frame
 	if (method.accessFlags & Native) != 0 {
-		frame.variables = make([]stackItem, method.numArgs())
+		frame.variables = make([]javaValue, method.numArgs())
 	} else {
-		frame.variables = make([]stackItem, method.code.maxLocals)
+		frame.variables = make([]javaValue, method.code.maxLocals)
 	}
 	for i := method.numArgs() - 1; i >= 0; i-- {
 		frame.variables[i] = previousFrame.stack.pop()
 	}
 	return frame
+}
+
+type programCounter struct {
+	code     *code
+	position uint
+}
+
+func (code *code) newProgramCounter() programCounter {
+	var pc programCounter
+	pc.code = code
+	return pc
+}
+
+func (pc *programCounter) nextByte() uint8 {
+	b := pc.code.code[pc.position]
+	pc.position++
+	return b
 }
 
 func (vm *VM) execute(className string, methodName string, previousFrame *frame) {
@@ -88,10 +105,9 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 		return
 	}
 
-	pc := 0
+	pc := method.code.newProgramCounter()
 	for {
-		instruction := method.code.code[pc]
-		pc++
+		instruction := pc.nextByte()
 		switch instruction {
 		case 0:
 		case 5:
@@ -99,17 +115,15 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 		case 8:
 			frame.stack.pushInt32(5)
 		case 16:
-			frame.stack.pushInt32(int32(method.code.code[pc]))
-			pc++
+			frame.stack.pushInt32(int32(pc.nextByte()))
 		case 18:
-			strRef := class.constantPoolItems[method.code.code[pc]-1].(stringConstant)
+			strRef := class.constantPoolItems[pc.nextByte()-1].(stringConstant)
 			str := class.constantPoolItems[strRef.utf8Index-1].(utf8String)
 			frame.stack.pushString(str)
-			pc++
 		case 26:
-			frame.stack.pushInt32(int32(frame.variables[0].(stackInt32)))
+			frame.stack.pushInt32(int32(frame.variables[0].(javaInt)))
 		case 27:
-			frame.stack.pushInt32(int32(frame.variables[1].(stackInt32)))
+			frame.stack.pushInt32(int32(frame.variables[1].(javaInt)))
 		case 60:
 			frame.variables[1] = frame.stack.pop()
 		case 96:
@@ -137,10 +151,8 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			return
 		case 184:
 			var i uint16
-			i = uint16(method.code.code[pc]) << 8
-			pc++
-			i |= uint16(method.code.code[pc])
-			pc++
+			i = uint16(pc.nextByte()) << 8
+			i |= uint16(pc.nextByte())
 			methodRef := class.getMethodRefAt(i)
 			vm.execute(methodRef.className(), methodRef.methodName(), &frame)
 			break
