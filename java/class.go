@@ -190,6 +190,11 @@ func (c *class) getMethodRefAt(index uint16) methodRef {
 	return c.constantPoolItems[index-1].(methodRef)
 }
 
+func (c *class) getStringAt(index int) utf8String {
+	strRef := c.constantPoolItems[index].(stringConstant)
+	return c.constantPoolItems[strRef.utf8Index-1].(utf8String)
+}
+
 func (m methodRef) methodName() string {
 	nt := m.containingClass.constantPoolItems[m.nameAndTypeIndex-1].(nameAndType)
 	n := m.containingClass.constantPoolItems[nt.nameIndex-1].(utf8String).contents

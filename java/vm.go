@@ -45,7 +45,7 @@ func nativePrintString(f *frame) {
 }
 
 func nativePrintInteger(f *frame) {
-	i := int32(f.variables[0].(javaInt))
+	i := f.variables[0].(javaInt).unbox()
 	fmt.Println(i)
 	return
 }
@@ -117,9 +117,8 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 		case 16:
 			frame.stack.pushInt32(int32(pc.nextByte()))
 		case 18:
-			strRef := class.constantPoolItems[pc.nextByte()-1].(stringConstant)
-			str := class.constantPoolItems[strRef.utf8Index-1].(utf8String)
-			frame.stack.push(str)
+			s := class.getStringAt(int(pc.nextByte() - 1))
+			frame.stack.push(s)
 		case 26:
 			frame.stack.push(frame.variables[0])
 		case 27:
