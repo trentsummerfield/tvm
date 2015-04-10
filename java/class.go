@@ -1,9 +1,10 @@
 package java
 
 import (
-	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 )
 
@@ -45,129 +46,116 @@ type class struct {
 	methods           []method
 }
 
-func parseCode(buf *bytes.Reader, length uint32) (c code) {
-	binary.Read(buf, binary.BigEndian, &c.maxStack)
-	binary.Read(buf, binary.BigEndian, &c.maxLocals)
-	var codeLength uint32
-	binary.Read(buf, binary.BigEndian, &codeLength)
+func parseCode(cr classReader, length uint32) (c code) {
+	c.maxStack = cr.u2()
+	c.maxLocals = cr.u2()
+	codeLength := cr.u4()
 	c.code = make([]byte, codeLength)
 	for k := 0; k < len(c.code); k++ {
-		binary.Read(buf, binary.BigEndian, &c.code[k])
+		c.code[k] = cr.u1()
 	}
 	for k := uint32(8) + codeLength; k < length; k++ {
-		var bytes uint8
-		if binary.Read(buf, binary.BigEndian, &bytes) != nil {
-			panic("Error reading code block")
-		}
+		_ = cr.u1()
 	}
 	return
 }
 
-func parseClass(b []byte) (c class, err error) {
-	buf := bytes.NewReader(b)
-	err = binary.Read(buf, binary.BigEndian, &c.magic)
-	if err != nil {
-		return
+type classReader struct {
+	reader io.Reader
+	err    error
+}
+
+func (r classReader) u4() uint32 {
+	if r.err != nil {
+		return 0
 	}
-	err = binary.Read(buf, binary.BigEndian, &c.minorVersion)
-	if err != nil {
-		return
+	var x uint32
+	r.err = binary.Read(r.reader, binary.BigEndian, &x)
+	return x
+}
+
+func (r classReader) u2() uint16 {
+	if r.err != nil {
+		return 0
 	}
-	err = binary.Read(buf, binary.BigEndian, &c.majorVersion)
-	if err != nil {
-		return
+	var x uint16
+	r.err = binary.Read(r.reader, binary.BigEndian, &x)
+	return x
+}
+
+func (r classReader) u1() uint8 {
+	if r.err != nil {
+		return 0
 	}
-	var constantPoolCount uint16
-	err = binary.Read(buf, binary.BigEndian, &constantPoolCount)
-	if err != nil {
-		return
+	var x uint8
+	r.err = binary.Read(r.reader, binary.BigEndian, &x)
+	return x
+}
+
+func newClassReader(r io.Reader) classReader {
+	cr := classReader{r, nil}
+	magic := cr.u4()
+	if magic != 0xCAFEBABE {
+		cr.err = errors.New("Bad magic number")
 	}
-	constantPoolCount--
+	return cr
+}
+
+func parseClass(r io.Reader) (c class, err error) {
+	cr := newClassReader(r)
+	_ = cr.u2() // minor version
+	_ = cr.u2() // major version
+	constantPoolCount := cr.u2() - 1
 	c.constantPoolItems = make([]constantPoolItem, constantPoolCount)
-	var i uint16
-	for i = 0; i < constantPoolCount; i++ {
-		c.constantPoolItems[i] = parseConstantPoolItem(&c, buf)
+	for i := uint16(0); i < constantPoolCount; i++ {
+		c.constantPoolItems[i] = parseConstantPoolItem(&c, cr)
 	}
-	err = binary.Read(buf, binary.BigEndian, &c.accessFlags)
-	if err != nil {
-		return
-	}
-	err = binary.Read(buf, binary.BigEndian, &c.thisClass)
-	if err != nil {
-		return
-	}
-	err = binary.Read(buf, binary.BigEndian, &c.superClass)
-	if err != nil {
-		return
-	}
-	var interfacesCount uint16
-	err = binary.Read(buf, binary.BigEndian, &interfacesCount)
-	if err != nil {
-		return
-	}
+	c.accessFlags = accessFlags(cr.u2())
+	c.thisClass = cr.u2()
+	c.superClass = cr.u2()
+
+	interfacesCount := cr.u2()
 	c.interfaces = make([]uint16, interfacesCount)
 
-	var fieldsCount uint16
-	err = binary.Read(buf, binary.BigEndian, &fieldsCount)
-	if err != nil {
-		return
-	}
+	fieldsCount := cr.u2()
 	c.fields = make([]uint16, fieldsCount)
 
-	var methodsCount uint16
-	err = binary.Read(buf, binary.BigEndian, &methodsCount)
-	if err != nil {
-		return
-	}
+	methodsCount := cr.u2()
 	c.methods = make([]method, methodsCount)
-	for i = 0; i < methodsCount; i++ {
+	for i := uint16(0); i < methodsCount; i++ {
 		c.methods[i].class = c
-		err = binary.Read(buf, binary.BigEndian, &c.methods[i].accessFlags)
-		err = binary.Read(buf, binary.BigEndian, &c.methods[i].nameIndex)
-		err = binary.Read(buf, binary.BigEndian, &c.methods[i].descriptorIndex)
+		c.methods[i].accessFlags = accessFlags(cr.u2())
+		c.methods[i].nameIndex = cr.u2()
+		c.methods[i].descriptorIndex = cr.u2()
 
 		var sig string
 		sig = c.constantPoolItems[c.methods[i].descriptorIndex-1].(utf8String).contents
 		c.methods[i].signiture = parseSigniture(sig)
 
-		var attrCount uint16
-		err = binary.Read(buf, binary.BigEndian, &attrCount)
-		if err != nil {
-			return
-		}
+		attrCount := cr.u2()
 		for j := uint16(0); j < attrCount; j++ {
-			var name uint16
-			var length uint32
-			err = binary.Read(buf, binary.BigEndian, &name)
-			err = binary.Read(buf, binary.BigEndian, &length)
+			name := cr.u2()
+			length := cr.u4()
 			actualName := (c.constantPoolItems[name-1]).(utf8String)
 			if actualName.contents == "Code" {
-				c.methods[i].code = parseCode(buf, length)
+				c.methods[i].code = parseCode(cr, length)
 			} else {
 				for k := uint32(0); k < length; k++ {
-					var bytes uint8
-					err = binary.Read(buf, binary.BigEndian, &bytes)
+					_ = cr.u1() // throw away bytes
 				}
 			}
 		}
 	}
-	var attrCount uint16
-	err = binary.Read(buf, binary.BigEndian, &attrCount)
-	if err != nil {
-		return
-	}
+	attrCount := cr.u2()
 	for j := uint16(0); j < attrCount; j++ {
-		var name uint16
-		var length uint32
-		err = binary.Read(buf, binary.BigEndian, &name)
-		err = binary.Read(buf, binary.BigEndian, &length)
+		_ = cr.u2()
+		length := cr.u4()
 		for k := uint32(0); k < length; k++ {
-			var bytes uint8
-			err = binary.Read(buf, binary.BigEndian, &bytes)
+			_ = cr.u1() // throw away bytes
 		}
 	}
 
-	return
+	return c, cr.err
 }
 
 func (c *class) getMethod(name string) method {
@@ -257,4 +245,122 @@ func parseSigniture(sig string) []string {
 		}
 	}
 	return s
+}
+
+type nameAndType struct {
+	nameIndex       uint16
+	descriptorIndex uint16
+}
+
+func (_ nameAndType) isConstantPoolItem() {}
+
+func parseNameAndType(c *class, cr classReader) constantPoolItem {
+	nameIndex := cr.u2()
+	descriptorIndex := cr.u2()
+	return nameAndType{nameIndex, descriptorIndex}
+}
+
+type utf8String struct {
+	contents string
+}
+
+func (_ utf8String) isConstantPoolItem() {}
+
+func parseUTF8String(c *class, cr classReader) constantPoolItem {
+	length := cr.u2()
+	bytes := make([]byte, length)
+	for i := uint16(0); i < length; i++ {
+		bytes[i] = cr.u1()
+	}
+	return utf8String{string(bytes)}
+}
+
+type classInfo struct {
+	nameIndex uint16
+}
+
+func (_ classInfo) isConstantPoolItem() {}
+
+func parseClassInfo(c *class, cr classReader) constantPoolItem {
+	nameIndex := cr.u2()
+	return classInfo{nameIndex}
+}
+
+type methodRef struct {
+	containingClass  *class
+	classIndex       uint16
+	nameAndTypeIndex uint16
+}
+
+func (_ methodRef) isConstantPoolItem() {}
+
+func parseMethodRef(c *class, cr classReader) constantPoolItem {
+	classIndex := cr.u2()
+	nameAndTypeIndex := cr.u2()
+	return methodRef{c, classIndex, nameAndTypeIndex}
+}
+
+type fieldRef struct {
+	classIndex       uint16
+	nameAndTypeIndex uint16
+}
+
+func (_ fieldRef) isConstantPoolItem() {}
+
+func parseFieldRef(c *class, cr classReader) constantPoolItem {
+	classIndex := cr.u2()
+	nameAndTypeIndex := cr.u2()
+	return fieldRef{classIndex, nameAndTypeIndex}
+}
+
+type stringConstant struct {
+	utf8Index uint16
+}
+
+func (_ stringConstant) isConstantPoolItem() {}
+
+func parseStringConstant(c *class, cr classReader) constantPoolItem {
+	utf8Index := cr.u2()
+	return stringConstant{utf8Index}
+}
+
+func unknownConstantPoolItem(_ *class, _ classReader) constantPoolItem {
+	panic("Unknown constant pool item")
+}
+
+func parseConstantPoolItem(c *class, cr classReader) constantPoolItem {
+	parsers := []func(*class, classReader) constantPoolItem{
+		unknownConstantPoolItem,
+		parseUTF8String,
+		unknownConstantPoolItem,
+		unknownConstantPoolItem,
+		unknownConstantPoolItem,
+		unknownConstantPoolItem,
+		unknownConstantPoolItem,
+		parseClassInfo,
+		parseStringConstant,
+		parseFieldRef,
+		parseMethodRef,
+		unknownConstantPoolItem,
+		parseNameAndType,
+	}
+	tag := cr.u1()
+	return parsers[tag](c, cr)
+}
+
+type method struct {
+	class           class
+	signiture       []string
+	accessFlags     accessFlags
+	nameIndex       uint16
+	descriptorIndex uint16
+	code            code
+}
+
+func (m method) name() string {
+	return m.class.constantPoolItems[m.nameIndex-1].(utf8String).contents
+}
+
+func (m method) numArgs() int {
+	return len(m.signiture) - 1
 }
