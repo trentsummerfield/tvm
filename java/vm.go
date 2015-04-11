@@ -151,6 +151,23 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			return
 		case 177:
 			return
+		case 178:
+			var i uint16
+			i |= uint16(pc.nextByte()) << 8
+			i |= uint16(pc.nextByte())
+			fieldRef := class.getFieldRefAt(i)
+			c := vm.resolveClass(fieldRef.className())
+			vm.initClass(&c, &frame)
+			f := c.getField(fieldRef.fieldName())
+			frame.stack.push(f.value)
+		case 179:
+			var i uint16
+			i |= uint16(pc.nextByte()) << 8
+			i |= uint16(pc.nextByte())
+			fieldRef := class.getFieldRefAt(i)
+			c := vm.resolveClass(fieldRef.className())
+			f := c.getField(fieldRef.fieldName())
+			f.value = frame.stack.pop()
 		case 184:
 			var i uint16
 			i |= uint16(pc.nextByte()) << 8
@@ -161,6 +178,14 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			panic(fmt.Sprintf("Unknown instruction: %v", instruction))
 		}
 	}
+}
+
+func (vm *VM) initClass(c *class, frame *frame) {
+	if c.initialised {
+		return
+	}
+	vm.execute(c.getName(), "<clinit>", frame)
+	c.initialised = true
 }
 
 type stack struct {
