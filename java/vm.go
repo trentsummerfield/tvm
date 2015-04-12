@@ -66,12 +66,16 @@ func (vm *VM) resolveClass(name string) class {
 
 func newFrame(method method, previousFrame *frame) frame {
 	var frame frame
+	numArgs := method.numArgs()
 	if (method.accessFlags & Native) != 0 {
 		frame.variables = make([]javaValue, method.numArgs())
 	} else {
 		frame.variables = make([]javaValue, method.code.maxLocals)
 	}
-	for i := method.numArgs() - 1; i >= 0; i-- {
+	if (method.accessFlags & Static) != 0 {
+		numArgs--
+	}
+	for i := numArgs; i >= 0; i-- {
 		frame.variables[i] = previousFrame.stack.pop()
 	}
 	return frame
@@ -95,6 +99,10 @@ func (pc *programCounter) nextByte() uint8 {
 }
 
 func (vm *VM) execute(className string, methodName string, previousFrame *frame) {
+	//log.Printf("Executing %s.%s\n", className, methodName)
+	if className == "java/lang/Object" {
+		return
+	}
 	class := vm.resolveClass(className)
 	method := class.getMethod(methodName)
 	frame := newFrame(method, previousFrame)
@@ -126,8 +134,18 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			frame.stack.push(frame.variables[0])
 		case 27:
 			frame.stack.push(frame.variables[1])
+		case 42:
+			frame.stack.push(frame.variables[0].(javaObject))
+		case 43:
+			frame.stack.push(frame.variables[1].(javaObject))
 		case 60:
 			frame.variables[1] = frame.stack.pop()
+		case 76:
+			frame.variables[1] = frame.stack.pop().(javaObject)
+		case 89:
+			tmp := frame.stack.pop()
+			frame.stack.push(tmp)
+			frame.stack.push(tmp)
 		case 96:
 			//TODO: make sure we do overflow correctly
 			x := frame.stack.popInt32()
@@ -168,16 +186,40 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			c := vm.resolveClass(fieldRef.className())
 			f := c.getField(fieldRef.fieldName())
 			f.value = frame.stack.pop()
+		case 182:
+			var i uint16
+			i |= uint16(pc.nextByte()) << 8
+			i |= uint16(pc.nextByte())
+			methodRef := class.getMethodRefAt(i)
+			vm.execute(methodRef.className(), methodRef.methodName(), &frame)
+		case 183:
+			var i uint16
+			i |= uint16(pc.nextByte()) << 8
+			i |= uint16(pc.nextByte())
+			methodRef := class.getMethodRefAt(i)
+			vm.execute(methodRef.className(), methodRef.methodName(), &frame)
 		case 184:
 			var i uint16
 			i |= uint16(pc.nextByte()) << 8
 			i |= uint16(pc.nextByte())
 			methodRef := class.getMethodRefAt(i)
 			vm.execute(methodRef.className(), methodRef.methodName(), &frame)
+		case 187:
+			var i uint16
+			i |= uint16(pc.nextByte()) << 8
+			i |= uint16(pc.nextByte())
+			classInfo := class.getClassInfoAt(i)
+			c := vm.resolveClass(classInfo.className())
+			ref := newInstance(&c)
+			frame.stack.push(ref)
 		default:
 			panic(fmt.Sprintf("Unknown instruction: %v", instruction))
 		}
 	}
+}
+
+func newInstance(c *class) javaObject {
+	return javaObject{}
 }
 
 func (vm *VM) initClass(c *class, frame *frame) {
@@ -249,3 +291,8 @@ func (s *stack) pushByte(i byte) {
 func (s *stack) popByte() byte {
 	return byte(s.pop().(javaByte))
 }
+
+type javaObject struct {
+}
+
+func (_ javaObject) isJavaValue() {}

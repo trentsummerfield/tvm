@@ -207,6 +207,10 @@ func (c *class) getFieldRefAt(index uint16) fieldRef {
 	return c.constantPoolItems[index-1].(fieldRef)
 }
 
+func (c *class) getClassInfoAt(index uint16) classInfo {
+	return c.constantPoolItems[index-1].(classInfo)
+}
+
 func (c *class) getStringAt(index int) utf8String {
 	strRef := c.constantPoolItems[index].(stringConstant)
 	return c.constantPoolItems[strRef.utf8Index-1].(utf8String)
@@ -221,6 +225,11 @@ func (m methodRef) methodName() string {
 func (m methodRef) className() string {
 	ct := m.containingClass.constantPoolItems[m.classIndex-1].(classInfo)
 	c := m.containingClass.constantPoolItems[ct.nameIndex-1].(utf8String).contents
+	return c
+}
+
+func (ct classInfo) className() string {
+	c := ct.containingClass.constantPoolItems[ct.nameIndex-1].(utf8String).contents
 	return c
 }
 
@@ -317,14 +326,15 @@ func parseUTF8String(c *class, cr classDecoder) constantPoolItem {
 }
 
 type classInfo struct {
-	nameIndex uint16
+	containingClass *class
+	nameIndex       uint16
 }
 
 func (_ classInfo) isConstantPoolItem() {}
 
 func parseClassInfo(c *class, cr classDecoder) constantPoolItem {
 	nameIndex := cr.u2()
-	return classInfo{nameIndex}
+	return classInfo{c, nameIndex}
 }
 
 type methodRef struct {
