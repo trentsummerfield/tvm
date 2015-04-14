@@ -38,7 +38,13 @@ func (vm *VM) Run() {
 	//TODO: push the actual command line arguments onto the stack for the main method.
 	frame.stack.pushString(utf8String{""})
 	//TODO: this is obviously completely wrong
-	vm.execute(vm.classes[0].getName(), "main", &frame)
+	var index int
+	for i, c := range vm.classes {
+		if c.hasMethodCalled("main") {
+			index = i
+		}
+	}
+	vm.execute(vm.classes[index].getName(), "main", &frame)
 }
 
 func nativePrintString(f *frame) {
@@ -121,6 +127,8 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 		instruction := pc.nextByte()
 		switch instruction {
 		case 0:
+		case 4:
+			frame.stack.pushInt32(1)
 		case 5:
 			frame.stack.pushInt32(2)
 		case 8:
@@ -186,6 +194,22 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			c := vm.resolveClass(fieldRef.className())
 			f := c.getField(fieldRef.fieldName())
 			f.value = frame.stack.pop()
+		case 180:
+			var i uint16
+			i |= uint16(pc.nextByte()) << 8
+			i |= uint16(pc.nextByte())
+			fieldRef := class.getFieldRefAt(i)
+			obj := frame.stack.popObject()
+			f := obj.getField(fieldRef.fieldName())
+			frame.stack.push(f)
+		case 181:
+			var i uint16
+			i |= uint16(pc.nextByte()) << 8
+			i |= uint16(pc.nextByte())
+			fieldRef := class.getFieldRefAt(i)
+			f := frame.stack.pop()
+			obj := frame.stack.popObject()
+			obj.setField(fieldRef.fieldName(), f)
 		case 182:
 			var i uint16
 			i |= uint16(pc.nextByte()) << 8
@@ -219,7 +243,7 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 }
 
 func newInstance(c *class) javaObject {
-	return javaObject{}
+	return javaObject{make(map[string]javaValue)}
 }
 
 func (vm *VM) initClass(c *class, frame *frame) {
@@ -293,6 +317,23 @@ func (s *stack) popByte() byte {
 }
 
 type javaObject struct {
+	fields map[string]javaValue
+}
+
+func (o *javaObject) getField(name string) javaValue {
+	_, ok := o.fields[name]
+	if !ok {
+		o.fields[name] = javaInt(0)
+	}
+	return o.fields[name]
+}
+
+func (o *javaObject) setField(name string, f javaValue) {
+	o.fields[name] = f
 }
 
 func (_ javaObject) isJavaValue() {}
+
+func (s *stack) popObject() javaObject {
+	return s.pop().(javaObject)
+}

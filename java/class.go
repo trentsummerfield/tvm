@@ -173,6 +173,16 @@ func parseClass(r io.Reader) (c class, err error) {
 	return c, cr.err
 }
 
+func (c *class) hasMethodCalled(name string) bool {
+	for _, m := range c.methods {
+		n := c.constantPoolItems[m.nameIndex-1].(utf8String).contents
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *class) getMethod(name string) method {
 	for _, m := range c.methods {
 		n := c.constantPoolItems[m.nameIndex-1].(utf8String).contents
