@@ -87,6 +87,14 @@ func bytesToOpcodes(bytes []byte) []opcode {
 			o := opcode{b, i, "idiv", nil}
 			opcodes = append(opcodes, o)
 			i += o.width()
+		case 154:
+			o := opcode{b, i, "ifne", bytes[i+1 : i+3]}
+			opcodes = append(opcodes, o)
+			i += o.width()
+		case 167:
+			o := opcode{b, i, "goto", bytes[i+1 : i+3]}
+			opcodes = append(opcodes, o)
+			i += o.width()
 		case 172:
 			o := opcode{b, i, "ireturn", nil}
 			opcodes = append(opcodes, o)

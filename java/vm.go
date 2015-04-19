@@ -88,7 +88,6 @@ func newFrame(method method, previousFrame *frame) frame {
 }
 
 func (vm *VM) execute(className string, methodName string, previousFrame *frame) {
-	//log.Printf("Executing %s.%s\n", className, methodName)
 	if className == "java/lang/Object" {
 		return
 	}
@@ -105,9 +104,10 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 		return
 	}
 
-	opcodes := bytesToOpcodes(method.code.code)
-	for _, op := range opcodes {
-		switch op.byte {
+	//opcodes := bytesToOpcodes(method.code.code)
+	for i := 0; true; i++ {
+		op := method.code.code[i]
+		switch op {
 		case 0:
 		case 4:
 			frame.stack.pushInt32(1)
@@ -116,9 +116,11 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 		case 8:
 			frame.stack.pushInt32(5)
 		case 16:
-			frame.stack.pushInt32(int32(op.args[0]))
+			i++
+			frame.stack.pushInt32(int32(method.code.code[i]))
 		case 18:
-			s := class.getStringAt(int(op.args[0] - 1))
+			i++
+			s := class.getStringAt(int(method.code.code[i] - 1))
 			frame.stack.push(s)
 		case 26:
 			frame.stack.push(frame.variables[0])
@@ -154,72 +156,107 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			x := frame.stack.popInt32()
 			y := frame.stack.popInt32()
 			frame.stack.pushInt32(y / x)
+		case 154:
+			c := frame.stack.popInt32()
+			var j int16
+			i++
+			j |= int16(method.code.code[i]) << 8
+			i++
+			j |= int16(method.code.code[i])
+			if c != 0 {
+				i -= 2
+				i += int(j) - 1
+			}
+		case 167:
+			var j int16
+			i++
+			j |= int16(method.code.code[i]) << 8
+			i++
+			j |= int16(method.code.code[i])
+			i -= 2
+			i += int(j) - 1
 		case 172:
 			previousFrame.stack.push(frame.stack.pop())
 			return
 		case 177:
 			return
 		case 178:
-			var i uint16
-			i |= uint16(op.args[0]) << 8
-			i |= uint16(op.args[1])
-			fieldRef := class.getFieldRefAt(i)
+			var x uint16
+			i++
+			x |= uint16(method.code.code[i]) << 8
+			i++
+			x |= uint16(method.code.code[i])
+			fieldRef := class.getFieldRefAt(x)
 			c := vm.resolveClass(fieldRef.className())
 			vm.initClass(&c, &frame)
 			f := c.getField(fieldRef.fieldName())
 			frame.stack.push(f.value)
 		case 179:
-			var i uint16
-			i |= uint16(op.args[0]) << 8
-			i |= uint16(op.args[1])
-			fieldRef := class.getFieldRefAt(i)
+			var x uint16
+			i++
+			x |= uint16(method.code.code[i]) << 8
+			i++
+			x |= uint16(method.code.code[i])
+			fieldRef := class.getFieldRefAt(x)
 			c := vm.resolveClass(fieldRef.className())
 			f := c.getField(fieldRef.fieldName())
 			f.value = frame.stack.pop()
 		case 180:
-			var i uint16
-			i |= uint16(op.args[0]) << 8
-			i |= uint16(op.args[1])
-			fieldRef := class.getFieldRefAt(i)
+			var x uint16
+			i++
+			x |= uint16(method.code.code[i]) << 8
+			i++
+			x |= uint16(method.code.code[i])
+			fieldRef := class.getFieldRefAt(x)
 			obj := frame.stack.popObject()
 			f := obj.getField(fieldRef.fieldName())
 			frame.stack.push(f)
 		case 181:
-			var i uint16
-			i |= uint16(op.args[0]) << 8
-			i |= uint16(op.args[1])
-			fieldRef := class.getFieldRefAt(i)
+			var x uint16
+			i++
+			x |= uint16(method.code.code[i]) << 8
+			i++
+			x |= uint16(method.code.code[i])
+			fieldRef := class.getFieldRefAt(x)
 			f := frame.stack.pop()
 			obj := frame.stack.popObject()
 			obj.setField(fieldRef.fieldName(), f)
 		case 182:
-			var i uint16
-			i |= uint16(op.args[0]) << 8
-			i |= uint16(op.args[1])
-			methodRef := class.getMethodRefAt(i)
+			var x uint16
+			i++
+			x |= uint16(method.code.code[i]) << 8
+			i++
+			x |= uint16(method.code.code[i])
+			methodRef := class.getMethodRefAt(x)
 			vm.execute(methodRef.className(), methodRef.methodName(), &frame)
 		case 183:
-			var i uint16
-			i |= uint16(op.args[0]) << 8
-			i |= uint16(op.args[1])
-			methodRef := class.getMethodRefAt(i)
+			var x uint16
+			i++
+			x |= uint16(method.code.code[i]) << 8
+			i++
+			x |= uint16(method.code.code[i])
+			methodRef := class.getMethodRefAt(x)
 			vm.execute(methodRef.className(), methodRef.methodName(), &frame)
 		case 184:
-			var i uint16
-			i |= uint16(op.args[0]) << 8
-			i |= uint16(op.args[1])
-			methodRef := class.getMethodRefAt(i)
+			var x uint16
+			i++
+			x |= uint16(method.code.code[i]) << 8
+			i++
+			x |= uint16(method.code.code[i])
+			methodRef := class.getMethodRefAt(x)
 			vm.execute(methodRef.className(), methodRef.methodName(), &frame)
 		case 187:
-			var i uint16
-			i |= uint16(op.args[0]) << 8
-			i |= uint16(op.args[1])
-			classInfo := class.getClassInfoAt(i)
+			var x uint16
+			i++
+			x |= uint16(method.code.code[i]) << 8
+			i++
+			x |= uint16(method.code.code[i])
+			classInfo := class.getClassInfoAt(x)
 			c := vm.resolveClass(classInfo.className())
 			ref := newInstance(&c)
 			frame.stack.push(ref)
 		default:
-			panic(fmt.Sprintf("Unknown instruction: %v", op.name))
+			panic(fmt.Sprintf("Cannot execute instruction: %v", op))
 		}
 	}
 }
