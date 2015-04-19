@@ -12,7 +12,7 @@ type VM struct {
 }
 
 type frame struct {
-	stack     stack
+	stack
 	variables []javaValue
 }
 
@@ -36,7 +36,7 @@ func (vm *VM) LoadClass(path string) {
 func (vm *VM) Run() {
 	var frame frame
 	//TODO: push the actual command line arguments onto the stack for the main method.
-	frame.stack.pushString(utf8String{""})
+	frame.pushString(utf8String{""})
 	//TODO: this is obviously completely wrong
 	var index int
 	for i, c := range vm.classes {
@@ -82,7 +82,7 @@ func newFrame(method method, previousFrame *frame) frame {
 		numArgs--
 	}
 	for i := numArgs; i >= 0; i-- {
-		frame.variables[i] = previousFrame.stack.pop()
+		frame.variables[i] = previousFrame.pop()
 	}
 	return frame
 }
@@ -104,157 +104,103 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 		return
 	}
 
-	//opcodes := bytesToOpcodes(method.code.code)
-	for i := 0; true; i++ {
-		op := method.code.code[i]
-		switch op {
-		case 0:
-		case 4:
-			frame.stack.pushInt32(1)
-		case 5:
-			frame.stack.pushInt32(2)
-		case 8:
-			frame.stack.pushInt32(5)
-		case 16:
-			i++
-			frame.stack.pushInt32(int32(method.code.code[i]))
-		case 18:
-			i++
-			s := class.getStringAt(int(method.code.code[i] - 1))
-			frame.stack.push(s)
-		case 26:
-			frame.stack.push(frame.variables[0])
-		case 27:
-			frame.stack.push(frame.variables[1])
-		case 42:
-			frame.stack.push(frame.variables[0].(javaObject))
-		case 43:
-			frame.stack.push(frame.variables[1].(javaObject))
-		case 60:
-			frame.variables[1] = frame.stack.pop()
-		case 76:
-			frame.variables[1] = frame.stack.pop().(javaObject)
-		case 89:
-			tmp := frame.stack.pop()
-			frame.stack.push(tmp)
-			frame.stack.push(tmp)
-		case 96:
+	pc := newProgramCounter(method.code.code)
+	for {
+		op := pc.next()
+		switch op.name {
+		case "nop":
+		case "iconst_1":
+			frame.pushInt32(1)
+		case "iconst_2":
+			frame.pushInt32(2)
+		case "iconst_5":
+			frame.pushInt32(5)
+		case "bipush":
+			frame.pushInt32(int32(op.int8()))
+		case "ldc":
+			s := class.getStringAt(int(op.int8() - 1))
+			frame.push(s)
+		case "iload_0":
+			frame.push(frame.variables[0])
+		case "iload_1":
+			frame.push(frame.variables[1])
+		case "aload_0":
+			frame.push(frame.variables[0].(javaObject))
+		case "aload_1":
+			frame.push(frame.variables[1].(javaObject))
+		case "istore_1":
+			frame.variables[1] = frame.pop()
+		case "astore_1":
+			frame.variables[1] = frame.pop().(javaObject)
+		case "dup":
+			tmp := frame.pop()
+			frame.push(tmp)
+			frame.push(tmp)
+		case "iadd":
 			//TODO: make sure we do overflow correctly
-			x := frame.stack.popInt32()
-			y := frame.stack.popInt32()
-			frame.stack.pushInt32(x + y)
-		case 100:
+			x := frame.popInt32()
+			y := frame.popInt32()
+			frame.pushInt32(x + y)
+		case "isub":
 			//TODO: make sure we do underflow correctly
-			x := frame.stack.popInt32()
-			y := frame.stack.popInt32()
-			frame.stack.pushInt32(y - x)
-		case 104:
-			x := frame.stack.popInt32()
-			y := frame.stack.popInt32()
-			frame.stack.pushInt32(x * y)
-		case 108:
-			x := frame.stack.popInt32()
-			y := frame.stack.popInt32()
-			frame.stack.pushInt32(y / x)
-		case 154:
-			c := frame.stack.popInt32()
-			var j int16
-			i++
-			j |= int16(method.code.code[i]) << 8
-			i++
-			j |= int16(method.code.code[i])
+			x := frame.popInt32()
+			y := frame.popInt32()
+			frame.pushInt32(y - x)
+		case "imul":
+			x := frame.popInt32()
+			y := frame.popInt32()
+			frame.pushInt32(x * y)
+		case "idiv":
+			x := frame.popInt32()
+			y := frame.popInt32()
+			frame.pushInt32(y / x)
+		case "ifne":
+			c := frame.popInt32()
 			if c != 0 {
-				i -= 2
-				i += int(j) - 1
+				pc.jump(int(op.int16()))
 			}
-		case 167:
-			var j int16
-			i++
-			j |= int16(method.code.code[i]) << 8
-			i++
-			j |= int16(method.code.code[i])
-			i -= 2
-			i += int(j) - 1
-		case 172:
-			previousFrame.stack.push(frame.stack.pop())
+		case "goto":
+			pc.jump(int(op.int16()))
+		case "ireturn":
+			previousFrame.push(frame.pop())
 			return
-		case 177:
+		case "return":
 			return
-		case 178:
-			var x uint16
-			i++
-			x |= uint16(method.code.code[i]) << 8
-			i++
-			x |= uint16(method.code.code[i])
-			fieldRef := class.getFieldRefAt(x)
+		case "getstatic":
+			fieldRef := class.getFieldRefAt(op.uint16())
 			c := vm.resolveClass(fieldRef.className())
 			vm.initClass(&c, &frame)
 			f := c.getField(fieldRef.fieldName())
-			frame.stack.push(f.value)
-		case 179:
-			var x uint16
-			i++
-			x |= uint16(method.code.code[i]) << 8
-			i++
-			x |= uint16(method.code.code[i])
-			fieldRef := class.getFieldRefAt(x)
+			frame.push(f.value)
+		case "putstatic":
+			fieldRef := class.getFieldRefAt(op.uint16())
 			c := vm.resolveClass(fieldRef.className())
 			f := c.getField(fieldRef.fieldName())
-			f.value = frame.stack.pop()
-		case 180:
-			var x uint16
-			i++
-			x |= uint16(method.code.code[i]) << 8
-			i++
-			x |= uint16(method.code.code[i])
-			fieldRef := class.getFieldRefAt(x)
-			obj := frame.stack.popObject()
+			f.value = frame.pop()
+		case "getfield":
+			fieldRef := class.getFieldRefAt(op.uint16())
+			obj := frame.popObject()
 			f := obj.getField(fieldRef.fieldName())
-			frame.stack.push(f)
-		case 181:
-			var x uint16
-			i++
-			x |= uint16(method.code.code[i]) << 8
-			i++
-			x |= uint16(method.code.code[i])
-			fieldRef := class.getFieldRefAt(x)
-			f := frame.stack.pop()
-			obj := frame.stack.popObject()
+			frame.push(f)
+		case "putfield":
+			fieldRef := class.getFieldRefAt(op.uint16())
+			f := frame.pop()
+			obj := frame.popObject()
 			obj.setField(fieldRef.fieldName(), f)
-		case 182:
-			var x uint16
-			i++
-			x |= uint16(method.code.code[i]) << 8
-			i++
-			x |= uint16(method.code.code[i])
-			methodRef := class.getMethodRefAt(x)
+		case "invokevirtual":
+			methodRef := class.getMethodRefAt(op.uint16())
 			vm.execute(methodRef.className(), methodRef.methodName(), &frame)
-		case 183:
-			var x uint16
-			i++
-			x |= uint16(method.code.code[i]) << 8
-			i++
-			x |= uint16(method.code.code[i])
-			methodRef := class.getMethodRefAt(x)
+		case "invokespecial":
+			methodRef := class.getMethodRefAt(op.uint16())
 			vm.execute(methodRef.className(), methodRef.methodName(), &frame)
-		case 184:
-			var x uint16
-			i++
-			x |= uint16(method.code.code[i]) << 8
-			i++
-			x |= uint16(method.code.code[i])
-			methodRef := class.getMethodRefAt(x)
+		case "invokestatic":
+			methodRef := class.getMethodRefAt(op.uint16())
 			vm.execute(methodRef.className(), methodRef.methodName(), &frame)
-		case 187:
-			var x uint16
-			i++
-			x |= uint16(method.code.code[i]) << 8
-			i++
-			x |= uint16(method.code.code[i])
-			classInfo := class.getClassInfoAt(x)
+		case "new":
+			classInfo := class.getClassInfoAt(op.uint16())
 			c := vm.resolveClass(classInfo.className())
 			ref := newInstance(&c)
-			frame.stack.push(ref)
+			frame.push(ref)
 		default:
 			panic(fmt.Sprintf("Cannot execute instruction: %v", op))
 		}
