@@ -18,8 +18,9 @@ type frame struct {
 
 func NewVM() (vm VM) {
 	vm.nativeMethods = map[string](func(*frame)){
-		"print":    nativePrintString,
-		"printInt": nativePrintInteger,
+		"print":     nativePrintString,
+		"printInt":  nativePrintInteger,
+		"printChar": nativePrintChar,
 	}
 	return vm
 }
@@ -56,6 +57,12 @@ func nativePrintString(f *frame) {
 func nativePrintInteger(f *frame) {
 	i := f.variables[0].(javaInt).unbox()
 	fmt.Println(i)
+	return
+}
+
+func nativePrintChar(f *frame) {
+	i := f.variables[0].(javaInt).unbox()
+	fmt.Printf("%c", i)
 	return
 }
 
@@ -109,10 +116,16 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 		op := pc.next()
 		switch op.name {
 		case "nop":
+		case "iconst_0":
+			frame.pushInt32(0)
 		case "iconst_1":
 			frame.pushInt32(1)
 		case "iconst_2":
 			frame.pushInt32(2)
+		case "iconst_3":
+			frame.pushInt32(3)
+		case "iconst_4":
+			frame.pushInt32(4)
 		case "iconst_5":
 			frame.pushInt32(5)
 		case "bipush":
@@ -125,13 +138,23 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 		case "iload_1":
 			frame.push(frame.variables[1])
 		case "aload_0":
-			frame.push(frame.variables[0].(javaObject))
+			frame.push(frame.variables[0])
 		case "aload_1":
-			frame.push(frame.variables[1].(javaObject))
+			frame.push(frame.variables[1])
 		case "istore_1":
 			frame.variables[1] = frame.pop()
 		case "astore_1":
-			frame.variables[1] = frame.pop().(javaObject)
+			frame.variables[1] = frame.pop()
+		case "castore":
+			v := frame.popInt32()
+			i := frame.popInt32()
+			a := frame.popArray()
+			a[int(i)] = javaByte(v)
+		case "caload":
+			i := frame.popInt32()
+			a := frame.popArray()
+			c := byte(a[int(i)].(javaByte))
+			frame.pushInt32(int32(c))
 		case "dup":
 			tmp := frame.pop()
 			frame.push(tmp)
@@ -201,6 +224,10 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			c := vm.resolveClass(classInfo.className())
 			ref := newInstance(&c)
 			frame.push(ref)
+		case "newarray":
+			count := frame.popInt32()
+			arr := make([]javaValue, count+1)
+			frame.pushArray(arr)
 		default:
 			panic(fmt.Sprintf("Cannot execute instruction: %v", op))
 		}
@@ -279,6 +306,18 @@ func (s *stack) pushByte(i byte) {
 
 func (s *stack) popByte() byte {
 	return byte(s.pop().(javaByte))
+}
+
+type javaArray []javaValue
+
+func (_ javaArray) isJavaValue() {}
+
+func (s *stack) pushArray(a javaArray) {
+	s.push(javaArray(a))
+}
+
+func (s *stack) popArray() javaArray {
+	return []javaValue(s.pop().(javaArray))
 }
 
 type javaObject struct {

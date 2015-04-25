@@ -35,10 +35,16 @@ func bytesToOpcode(bytes []byte) opcode {
 	switch b {
 	case 0:
 		return opcode{b, "nop", nil}
+	case 3:
+		return opcode{b, "iconst_0", nil}
 	case 4:
 		return opcode{b, "iconst_1", nil}
 	case 5:
 		return opcode{b, "iconst_2", nil}
+	case 6:
+		return opcode{b, "iconst_3", nil}
+	case 7:
+		return opcode{b, "iconst_4", nil}
 	case 8:
 		return opcode{b, "iconst_5", nil}
 	case 16:
@@ -53,10 +59,14 @@ func bytesToOpcode(bytes []byte) opcode {
 		return opcode{b, "aload_0", nil}
 	case 43:
 		return opcode{b, "aload_1", nil}
+	case 52:
+		return opcode{b, "caload", nil}
 	case 60:
 		return opcode{b, "istore_1", nil}
 	case 76:
 		return opcode{b, "astore_1", nil}
+	case 85:
+		return opcode{b, "castore", nil}
 	case 89:
 		return opcode{b, "dup", nil}
 	case 96:
@@ -91,6 +101,8 @@ func bytesToOpcode(bytes []byte) opcode {
 		return opcode{b, "invokestatic", bytes[1:3]}
 	case 187:
 		return opcode{b, "new", bytes[1:3]}
+	case 188:
+		return opcode{b, "newarray", bytes[1:2]}
 	default:
 		log.Panicf("Unknown instruction: %v", b)
 	}
