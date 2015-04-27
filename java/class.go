@@ -106,11 +106,15 @@ func parseClass(r io.Reader) (c class, err error) {
 	cr := newClassDecoder(r)
 	_ = cr.u2() // minor version
 	_ = cr.u2() // major version
-	constantPoolCount := cr.u2() - 1
-	c.constantPoolItems = make([]constantPoolItem, constantPoolCount)
-	for i := uint16(0); i < constantPoolCount; i++ {
-		c.constantPoolItems[i] = parseConstantPoolItem(&c, cr)
+	cpc := cr.u2()
+	constantPoolCount := cpc - 1
+	if cpc != 0 {
+		c.constantPoolItems = make([]constantPoolItem, constantPoolCount)
+		for i := uint16(0); i < constantPoolCount; i++ {
+			c.constantPoolItems[i] = parseConstantPoolItem(&c, cr)
+		}
 	}
+
 	c.accessFlags = accessFlags(cr.u2())
 	c.thisClass = cr.u2()
 	c.superClass = cr.u2()

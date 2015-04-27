@@ -37,7 +37,7 @@ func (vm *VM) LoadClass(path string) {
 func (vm *VM) Run() {
 	var frame frame
 	//TODO: push the actual command line arguments onto the stack for the main method.
-	frame.pushString(utf8String{""})
+	frame.push(nil)
 	//TODO: this is obviously completely wrong
 	var index int
 	for i, c := range vm.classes {
@@ -49,8 +49,18 @@ func (vm *VM) Run() {
 }
 
 func nativePrintString(f *frame) {
-	str := f.variables[0].(utf8String)
-	fmt.Print(str.contents)
+	str := f.variables[0]
+	switch str := str.(type) {
+	default:
+		fmt.Printf("unexpected type %T", str)
+	case javaObject:
+		f := str.getField("data").(javaArray)
+		bytes := make([]byte, len(f))
+		for i, b := range f {
+			bytes[i] = byte(b.(javaByte))
+		}
+		fmt.Print(string(bytes))
+	}
 	return
 }
 
@@ -68,6 +78,7 @@ func nativePrintChar(f *frame) {
 
 func (vm *VM) resolveClass(name string) class {
 	for _, class := range vm.classes {
+		// TODO: handle packages correctly
 		if class.getName() == name {
 			return class
 		}
@@ -132,17 +143,32 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			frame.pushInt32(int32(op.int8()))
 		case "ldc":
 			s := class.getStringAt(int(op.int8() - 1))
-			frame.push(s)
+			c := vm.resolveClass("java/lang/String")
+			ref := newInstance(&c)
+			arr := make([]javaValue, len(s.contents))
+			for i, _ := range arr {
+				arr[i] = javaByte(s.contents[i])
+			}
+			ref.fields["data"] = javaArray(arr)
+			frame.push(ref)
 		case "iload_0":
 			frame.push(frame.variables[0])
 		case "iload_1":
 			frame.push(frame.variables[1])
+		case "iload_2":
+			frame.push(frame.variables[2])
+		case "iload_3":
+			frame.push(frame.variables[3])
 		case "aload_0":
 			frame.push(frame.variables[0])
 		case "aload_1":
 			frame.push(frame.variables[1])
 		case "istore_1":
 			frame.variables[1] = frame.pop()
+		case "istore_2":
+			frame.variables[2] = frame.pop()
+		case "istore_3":
+			frame.variables[3] = frame.pop()
 		case "astore_1":
 			frame.variables[1] = frame.pop()
 		case "castore":
@@ -177,14 +203,25 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			x := frame.popInt32()
 			y := frame.popInt32()
 			frame.pushInt32(y / x)
+		case "iinc":
+			index := op.args[0]
+			c := op.args[1]
+			i := frame.variables[index].(javaInt).unbox()
+			frame.variables[index] = javaInt(i + int32(c))
 		case "ifne":
 			c := frame.popInt32()
 			if c != 0 {
 				pc.jump(int(op.int16()))
 			}
+		case "if_icmpge":
+			v2 := frame.popInt32()
+			v1 := frame.popInt32()
+			if v1 >= v2 {
+				pc.jump(int(op.int16()))
+			}
 		case "goto":
 			pc.jump(int(op.int16()))
-		case "ireturn":
+		case "ireturn", "areturn":
 			previousFrame.push(frame.pop())
 			return
 		case "return":
@@ -226,8 +263,14 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			frame.push(ref)
 		case "newarray":
 			count := frame.popInt32()
-			arr := make([]javaValue, count+1)
+			arr := make([]javaValue, count)
+			for i, _ := range arr {
+				arr[i] = javaByte(67)
+			}
 			frame.pushArray(arr)
+		case "arraylength":
+			a := frame.popArray()
+			frame.pushInt32(int32(len(a)))
 		default:
 			panic(fmt.Sprintf("Cannot execute instruction: %v", op))
 		}
@@ -268,16 +311,6 @@ func (s *stack) pop() javaValue {
 	s.size--
 	s.items = s.items[:s.size]
 	return e
-}
-
-func (_ utf8String) isJavaValue() {}
-
-func (s *stack) pushString(str utf8String) {
-	s.push(str)
-}
-
-func (s *stack) popString() utf8String {
-	return s.pop().(utf8String)
 }
 
 type javaInt int32

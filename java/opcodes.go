@@ -55,6 +55,10 @@ func bytesToOpcode(bytes []byte) opcode {
 		return opcode{b, "iload_0", nil}
 	case 27:
 		return opcode{b, "iload_1", nil}
+	case 28:
+		return opcode{b, "iload_2", nil}
+	case 29:
+		return opcode{b, "iload_3", nil}
 	case 42:
 		return opcode{b, "aload_0", nil}
 	case 43:
@@ -63,6 +67,10 @@ func bytesToOpcode(bytes []byte) opcode {
 		return opcode{b, "caload", nil}
 	case 60:
 		return opcode{b, "istore_1", nil}
+	case 61:
+		return opcode{b, "istore_2", nil}
+	case 62:
+		return opcode{b, "istore_3", nil}
 	case 76:
 		return opcode{b, "astore_1", nil}
 	case 85:
@@ -77,12 +85,18 @@ func bytesToOpcode(bytes []byte) opcode {
 		return opcode{b, "imul", nil}
 	case 108:
 		return opcode{b, "idiv", nil}
+	case 132:
+		return opcode{b, "iinc", bytes[1:3]}
 	case 154:
 		return opcode{b, "ifne", bytes[1:3]}
+	case 162:
+		return opcode{b, "if_icmpge", bytes[1:3]}
 	case 167:
 		return opcode{b, "goto", bytes[1:3]}
 	case 172:
 		return opcode{b, "ireturn", nil}
+	case 176:
+		return opcode{b, "areturn", nil}
 	case 177:
 		return opcode{b, "return", nil}
 	case 178:
@@ -103,6 +117,8 @@ func bytesToOpcode(bytes []byte) opcode {
 		return opcode{b, "new", bytes[1:3]}
 	case 188:
 		return opcode{b, "newarray", bytes[1:2]}
+	case 190:
+		return opcode{b, "arraylength", nil}
 	default:
 		log.Panicf("Unknown instruction: %v", b)
 	}

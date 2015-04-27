@@ -1,6 +1,6 @@
 public class Main {
     public static void main(String[] args) {
-        char[] chars = new char[10];
+        char[] chars = new char[11];
         chars[0] = 'h';
         chars[1] = 'e';
         chars[2] = 'l';
