@@ -106,9 +106,6 @@ func newFrame(method method, previousFrame *frame) frame {
 }
 
 func (vm *VM) execute(className string, methodName string, previousFrame *frame) {
-	if className == "java/lang/Object" {
-		return
-	}
 	class := vm.resolveClass(className)
 	method := class.getMethod(methodName)
 	frame := newFrame(method, previousFrame)
