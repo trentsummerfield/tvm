@@ -151,26 +151,26 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			}
 			ref.fields["data"] = javaArray(arr)
 			frame.push(ref)
-		case "iload_0":
+		case "iload":
+			index := op.int8()
+			frame.push(frame.variables[index])
+		case "iload_0", "aload_0":
 			frame.push(frame.variables[0])
-		case "iload_1":
+		case "iload_1", "aload_1":
 			frame.push(frame.variables[1])
-		case "iload_2":
+		case "iload_2", "aload_2":
 			frame.push(frame.variables[2])
-		case "iload_3":
+		case "iload_3", "aload_3":
 			frame.push(frame.variables[3])
-		case "aload_0":
-			frame.push(frame.variables[0])
-		case "aload_1":
-			frame.push(frame.variables[1])
-		case "istore_1":
+		case "istore":
+			index := op.int8()
+			frame.variables[index] = frame.pop()
+		case "istore_1", "astore_1":
 			frame.variables[1] = frame.pop()
 		case "istore_2":
 			frame.variables[2] = frame.pop()
-		case "istore_3":
+		case "istore_3", "astore_3":
 			frame.variables[3] = frame.pop()
-		case "astore_1":
-			frame.variables[1] = frame.pop()
 		case "castore":
 			v := frame.popInt32()
 			i := frame.popInt32()
@@ -217,6 +217,12 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			v2 := frame.popInt32()
 			v1 := frame.popInt32()
 			if v1 >= v2 {
+				pc.jump(int(op.int16()))
+			}
+		case "if_icmple":
+			v2 := frame.popInt32()
+			v1 := frame.popInt32()
+			if v1 <= v2 {
 				pc.jump(int(op.int16()))
 			}
 		case "goto":

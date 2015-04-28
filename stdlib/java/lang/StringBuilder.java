@@ -5,12 +5,19 @@ public class StringBuilder {
     private int size;
 
     public StringBuilder() {
-        data = new char[100];
+        data = new char[8];
         size = 0;
     }
 
     public StringBuilder append(String s) {
         int l = s.data.length;
+        while (size + l > data.length) {
+            char[] expandedData = new char[data.length * 2];
+            for (int i = 0; i < size; i++) {
+                expandedData[i] = data[i];
+            }
+            data = expandedData;
+        }
         for (int i = 0; i < l; i++) {
             data[i+size] = s.data[i];
         }

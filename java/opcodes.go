@@ -51,6 +51,8 @@ func bytesToOpcode(bytes []byte) opcode {
 		return opcode{b, "bipush", bytes[1:2]}
 	case 18:
 		return opcode{b, "ldc", bytes[1:2]}
+	case 21:
+		return opcode{b, "iload", bytes[1:2]}
 	case 26:
 		return opcode{b, "iload_0", nil}
 	case 27:
@@ -63,8 +65,14 @@ func bytesToOpcode(bytes []byte) opcode {
 		return opcode{b, "aload_0", nil}
 	case 43:
 		return opcode{b, "aload_1", nil}
+	case 44:
+		return opcode{b, "aload_2", nil}
+	case 45:
+		return opcode{b, "aload_3", nil}
 	case 52:
 		return opcode{b, "caload", nil}
+	case 54:
+		return opcode{b, "istore", bytes[1:2]}
 	case 60:
 		return opcode{b, "istore_1", nil}
 	case 61:
@@ -73,6 +81,8 @@ func bytesToOpcode(bytes []byte) opcode {
 		return opcode{b, "istore_3", nil}
 	case 76:
 		return opcode{b, "astore_1", nil}
+	case 78:
+		return opcode{b, "astore_3", nil}
 	case 85:
 		return opcode{b, "castore", nil}
 	case 89:
@@ -91,6 +101,8 @@ func bytesToOpcode(bytes []byte) opcode {
 		return opcode{b, "ifne", bytes[1:3]}
 	case 162:
 		return opcode{b, "if_icmpge", bytes[1:3]}
+	case 164:
+		return opcode{b, "if_icmple", bytes[1:3]}
 	case 167:
 		return opcode{b, "goto", bytes[1:3]}
 	case 172:
