@@ -45,7 +45,7 @@ func (vm *VM) Run() {
 			index = i
 		}
 	}
-	vm.execute(vm.classes[index].getName(), "main", &frame)
+	vm.execute(vm.classes[index].getName(), "main", &frame, false)
 }
 
 func nativePrintString(f *frame) {
@@ -88,27 +88,44 @@ func (vm *VM) resolveClass(name string) class {
 	return class{}
 }
 
-func newFrame(method method, previousFrame *frame) frame {
-	var frame frame
+func collectArgs(method method, frame *frame) []javaValue {
 	numArgs := method.numArgs()
+	if (method.accessFlags & Static) != 0 {
+		numArgs--
+	}
+	args := make([]javaValue, numArgs+1)
+	for i := numArgs; i >= 0; i-- {
+		args[i] = frame.pop()
+	}
+	return args
+}
+
+func newFrame(method method, args []javaValue) frame {
+	var frame frame
 	if (method.accessFlags & Native) != 0 {
 		frame.variables = make([]javaValue, method.numArgs())
 	} else {
 		frame.variables = make([]javaValue, method.code.maxLocals)
 	}
-	if (method.accessFlags & Static) != 0 {
-		numArgs--
-	}
-	for i := numArgs; i >= 0; i-- {
-		frame.variables[i] = previousFrame.pop()
+	for i, v := range args {
+		frame.variables[i] = v
 	}
 	return frame
 }
 
-func (vm *VM) execute(className string, methodName string, previousFrame *frame) {
+func (vm *VM) execute(className string, methodName string, previousFrame *frame, virtual bool) {
 	class := vm.resolveClass(className)
 	method := class.getMethod(methodName)
-	frame := newFrame(method, previousFrame)
+	args := collectArgs(method, previousFrame)
+	if virtual {
+		o := args[0].(javaObject)
+		for _, v := range args {
+			previousFrame.push(v)
+		}
+		vm.execute(o.className, methodName, previousFrame, false)
+		return
+	}
+	frame := newFrame(method, args)
 
 	if (method.accessFlags & Native) != 0 {
 		native := vm.nativeMethods[methodName]
@@ -164,7 +181,7 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			frame.variables[index] = frame.pop()
 		case "istore_1", "astore_1":
 			frame.variables[1] = frame.pop()
-		case "istore_2":
+		case "istore_2", "astore_2":
 			frame.variables[2] = frame.pop()
 		case "istore_3", "astore_3":
 			frame.variables[3] = frame.pop()
@@ -252,13 +269,13 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 			obj.setField(fieldRef.fieldName(), f)
 		case "invokevirtual":
 			methodRef := class.getMethodRefAt(op.uint16())
-			vm.execute(methodRef.className(), methodRef.methodName(), &frame)
+			vm.execute(methodRef.className(), methodRef.methodName(), &frame, true)
 		case "invokespecial":
 			methodRef := class.getMethodRefAt(op.uint16())
-			vm.execute(methodRef.className(), methodRef.methodName(), &frame)
+			vm.execute(methodRef.className(), methodRef.methodName(), &frame, false)
 		case "invokestatic":
 			methodRef := class.getMethodRefAt(op.uint16())
-			vm.execute(methodRef.className(), methodRef.methodName(), &frame)
+			vm.execute(methodRef.className(), methodRef.methodName(), &frame, false)
 		case "new":
 			classInfo := class.getClassInfoAt(op.uint16())
 			c := vm.resolveClass(classInfo.className())
@@ -281,14 +298,14 @@ func (vm *VM) execute(className string, methodName string, previousFrame *frame)
 }
 
 func newInstance(c *class) javaObject {
-	return javaObject{make(map[string]javaValue)}
+	return javaObject{c.getName(), make(map[string]javaValue)}
 }
 
 func (vm *VM) initClass(c *class, frame *frame) {
 	if c.initialised {
 		return
 	}
-	vm.execute(c.getName(), "<clinit>", frame)
+	vm.execute(c.getName(), "<clinit>", frame, false)
 	c.initialised = true
 }
 
@@ -357,7 +374,8 @@ func (s *stack) popArray() javaArray {
 }
 
 type javaObject struct {
-	fields map[string]javaValue
+	className string
+	fields    map[string]javaValue
 }
 
 func (o *javaObject) getField(name string) javaValue {
