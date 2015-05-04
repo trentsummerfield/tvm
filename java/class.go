@@ -213,6 +213,12 @@ func (c *class) getName() string {
 	return name.contents
 }
 
+func (c *class) getSuperName() string {
+	info := c.constantPoolItems[c.superClass-1].(classInfo)
+	name := c.constantPoolItems[info.nameIndex-1].(utf8String)
+	return name.contents
+}
+
 func (c *class) getMethodRefAt(index uint16) methodRef {
 	return c.constantPoolItems[index-1].(methodRef)
 }

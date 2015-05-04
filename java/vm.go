@@ -115,6 +115,10 @@ func newFrame(method method, args []javaValue) frame {
 
 func (vm *VM) execute(className string, methodName string, previousFrame *frame, virtual bool) {
 	class := vm.resolveClass(className)
+	if !class.hasMethodCalled(methodName) {
+		vm.execute(class.getSuperName(), methodName, previousFrame, false)
+		return
+	}
 	method := class.getMethod(methodName)
 	args := collectArgs(method, previousFrame)
 	if virtual {
