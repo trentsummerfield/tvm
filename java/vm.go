@@ -7,22 +7,46 @@ import (
 )
 
 type VM struct {
-	classes       []class
-	nativeMethods map[string](func(*frame))
+	classes           []Class
+	activeMethod      Method
+	nativeMethods     map[string](func(*Frame))
+	activeInstruction int
+	frame             *Frame
 }
 
-type frame struct {
+type Frame struct {
 	stack
-	variables []javaValue
+	PreviousFrame *Frame
+	Class         *Class
+	Method        *Method
+	PC            *ProgramCounter
+	variables     []javaValue
+	root          bool
 }
 
 func NewVM() (vm VM) {
-	vm.nativeMethods = map[string](func(*frame)){
+	vm.nativeMethods = map[string](func(*Frame)){
 		"print":     nativePrintString,
 		"printInt":  nativePrintInteger,
 		"printChar": nativePrintChar,
 	}
 	return vm
+}
+
+func (vm *VM) LoadedClasses() []Class {
+	return vm.classes
+}
+
+func (vm *VM) ActiveMethod() Method {
+	return vm.activeMethod
+}
+
+func (vm *VM) ActiveFrame() *Frame {
+	return vm.frame
+}
+
+func (vm *VM) ActiveInstruction() int {
+	return vm.activeInstruction
 }
 
 func (vm *VM) LoadClass(path string) {
@@ -35,20 +59,33 @@ func (vm *VM) LoadClass(path string) {
 }
 
 func (vm *VM) Run() {
-	var frame frame
+	var frame Frame
+	//TODO: push the actual command line arguments onto the stack for the main method.
+	frame.push(nil)
+	frame.root = true
+	//TODO: this is obviously completely wrong
+	for _, c := range vm.classes {
+		if c.hasMethodCalled("main") {
+			vm.activeMethod = c.resolveMethod("main")
+		}
+	}
+	vm.execute(vm.activeMethod.class.Name(), "main", &frame, false, true)
+}
+
+func (vm *VM) Start() {
+	var frame Frame
 	//TODO: push the actual command line arguments onto the stack for the main method.
 	frame.push(nil)
 	//TODO: this is obviously completely wrong
-	var index int
-	for i, c := range vm.classes {
+	for _, c := range vm.classes {
 		if c.hasMethodCalled("main") {
-			index = i
+			vm.activeMethod = c.resolveMethod("main")
 		}
 	}
-	vm.execute(vm.classes[index].getName(), "main", &frame, false)
+	vm.execute(vm.activeMethod.class.Name(), "main", &frame, false, false)
 }
 
-func nativePrintString(f *frame) {
+func nativePrintString(f *Frame) {
 	str := f.variables[0]
 	switch str := str.(type) {
 	default:
@@ -64,31 +101,31 @@ func nativePrintString(f *frame) {
 	return
 }
 
-func nativePrintInteger(f *frame) {
+func nativePrintInteger(f *Frame) {
 	i := f.variables[0].(javaInt).unbox()
 	fmt.Println(i)
 	return
 }
 
-func nativePrintChar(f *frame) {
+func nativePrintChar(f *Frame) {
 	i := f.variables[0].(javaInt).unbox()
 	fmt.Printf("%c", i)
 	return
 }
 
-func (vm *VM) resolveClass(name string) class {
+func (vm *VM) resolveClass(name string) Class {
 	for _, class := range vm.classes {
 		// TODO: handle packages correctly
-		if class.getName() == name {
+		if class.Name() == name {
 			return class
 		}
 	}
 	//TODO: raise the appropriate java exception
 	log.Panicf("Could not resolve class %s\n", name)
-	return class{}
+	return Class{}
 }
 
-func collectArgs(method method, frame *frame) []javaValue {
+func collectArgs(method Method, frame *Frame) []javaValue {
 	numArgs := method.numArgs()
 	if (method.accessFlags & Static) != 0 {
 		numArgs--
@@ -100,216 +137,262 @@ func collectArgs(method method, frame *frame) []javaValue {
 	return args
 }
 
-func newFrame(method method, args []javaValue) frame {
-	var frame frame
+func newFrame(previousFrame *Frame, method Method, args []javaValue) Frame {
+	var frame Frame
 	if (method.accessFlags & Native) != 0 {
 		frame.variables = make([]javaValue, method.numArgs())
 	} else {
-		frame.variables = make([]javaValue, method.code.maxLocals)
+		frame.variables = make([]javaValue, method.Code.maxLocals)
 	}
 	for i, v := range args {
 		frame.variables[i] = v
 	}
+	frame.Class = method.Class()
+	frame.Method = &method
+	frame.PreviousFrame = previousFrame
+	pc := newProgramCounter(method.Code.Instructions)
+	frame.PC = &pc
 	return frame
 }
 
-func (vm *VM) execute(className string, methodName string, previousFrame *frame, virtual bool) {
+func buildFrame(vm *VM, className, methodName string, previousFrame *Frame, virtual bool) *Frame {
 	class := vm.resolveClass(className)
 	if !class.hasMethodCalled(methodName) {
-		vm.execute(class.getSuperName(), methodName, previousFrame, false)
-		return
+		return buildFrame(vm, class.getSuperName(), methodName, previousFrame, false)
 	}
-	method := class.getMethod(methodName)
+	method := class.resolveMethod(methodName)
 	args := collectArgs(method, previousFrame)
 	if virtual {
 		o := args[0].(javaObject)
 		for _, v := range args {
 			previousFrame.push(v)
 		}
-		vm.execute(o.className, methodName, previousFrame, false)
-		return
+		return buildFrame(vm, o.className, methodName, previousFrame, false)
 	}
-	frame := newFrame(method, args)
 
-	if (method.accessFlags & Native) != 0 {
+	frame := newFrame(previousFrame, method, args)
+	return &frame
+}
+
+func (vm *VM) execute(className string, methodName string, previousFrame *Frame, virtual bool, run bool) {
+	vm.frame = buildFrame(vm, className, methodName, previousFrame, virtual)
+
+	if run {
+		for !vm.frame.root {
+			log.Printf("%v::%v", vm.frame.Class.Name(), vm.frame.Method.Name())
+			vm.Step()
+		}
+	} else {
+		vm.Step()
+	}
+}
+
+func (vm *VM) Step() {
+	if (vm.frame.Method.accessFlags & Native) != 0 {
+		methodName := vm.frame.Method.Name()
 		native := vm.nativeMethods[methodName]
 		if native == nil {
 			log.Panicf("Unknown native method %s", methodName)
 		}
-		native(&frame)
-		return
+		native(vm.frame)
+		vm.frame = vm.frame.PreviousFrame
 	}
+	vm.frame = runByteCode(vm, vm.frame)
+}
 
-	pc := newProgramCounter(method.code.code)
-	for {
-		op := pc.next()
-		switch op.name {
-		case "nop":
-		case "iconst_0":
-			frame.pushInt32(0)
-		case "iconst_1":
-			frame.pushInt32(1)
-		case "iconst_2":
-			frame.pushInt32(2)
-		case "iconst_3":
-			frame.pushInt32(3)
-		case "iconst_4":
-			frame.pushInt32(4)
-		case "iconst_5":
-			frame.pushInt32(5)
-		case "bipush":
-			frame.pushInt32(int32(op.int8()))
-		case "ldc":
-			s := class.getStringAt(int(op.int8() - 1))
-			c := vm.resolveClass("java/lang/String")
-			ref := newInstance(&c)
-			arr := make([]javaValue, len(s.contents))
-			for i, _ := range arr {
-				arr[i] = javaByte(s.contents[i])
-			}
-			ref.fields["data"] = javaArray(arr)
-			frame.push(ref)
-		case "iload":
-			index := op.int8()
-			frame.push(frame.variables[index])
-		case "iload_0", "aload_0":
-			frame.push(frame.variables[0])
-		case "iload_1", "aload_1":
-			frame.push(frame.variables[1])
-		case "iload_2", "aload_2":
-			frame.push(frame.variables[2])
-		case "iload_3", "aload_3":
-			frame.push(frame.variables[3])
-		case "istore":
-			index := op.int8()
-			frame.variables[index] = frame.pop()
-		case "istore_1", "astore_1":
-			frame.variables[1] = frame.pop()
-		case "istore_2", "astore_2":
-			frame.variables[2] = frame.pop()
-		case "istore_3", "astore_3":
-			frame.variables[3] = frame.pop()
-		case "castore":
-			v := frame.popInt32()
-			i := frame.popInt32()
-			a := frame.popArray()
-			a[int(i)] = javaByte(v)
-		case "caload":
-			i := frame.popInt32()
-			a := frame.popArray()
-			c := byte(a[int(i)].(javaByte))
-			frame.pushInt32(int32(c))
-		case "dup":
-			tmp := frame.pop()
-			frame.push(tmp)
-			frame.push(tmp)
-		case "iadd":
-			//TODO: make sure we do overflow correctly
-			x := frame.popInt32()
-			y := frame.popInt32()
-			frame.pushInt32(x + y)
-		case "isub":
-			//TODO: make sure we do underflow correctly
-			x := frame.popInt32()
-			y := frame.popInt32()
-			frame.pushInt32(y - x)
-		case "imul":
-			x := frame.popInt32()
-			y := frame.popInt32()
-			frame.pushInt32(x * y)
-		case "idiv":
-			x := frame.popInt32()
-			y := frame.popInt32()
-			frame.pushInt32(y / x)
-		case "iinc":
-			index := op.args[0]
-			c := op.args[1]
-			i := frame.variables[index].(javaInt).unbox()
-			frame.variables[index] = javaInt(i + int32(c))
-		case "ifne":
-			c := frame.popInt32()
-			if c != 0 {
-				pc.jump(int(op.int16()))
-			}
-		case "if_icmpge":
-			v2 := frame.popInt32()
-			v1 := frame.popInt32()
-			if v1 >= v2 {
-				pc.jump(int(op.int16()))
-			}
-		case "if_icmple":
-			v2 := frame.popInt32()
-			v1 := frame.popInt32()
-			if v1 <= v2 {
-				pc.jump(int(op.int16()))
-			}
-		case "goto":
-			pc.jump(int(op.int16()))
-		case "ireturn", "areturn":
-			previousFrame.push(frame.pop())
-			return
-		case "return":
-			return
-		case "getstatic":
-			fieldRef := class.getFieldRefAt(op.uint16())
-			c := vm.resolveClass(fieldRef.className())
-			vm.initClass(&c, &frame)
-			f := c.getField(fieldRef.fieldName())
-			frame.push(f.value)
-		case "putstatic":
-			fieldRef := class.getFieldRefAt(op.uint16())
-			c := vm.resolveClass(fieldRef.className())
-			f := c.getField(fieldRef.fieldName())
-			f.value = frame.pop()
-		case "getfield":
-			fieldRef := class.getFieldRefAt(op.uint16())
-			obj := frame.popObject()
-			f := obj.getField(fieldRef.fieldName())
-			frame.push(f)
-		case "putfield":
-			fieldRef := class.getFieldRefAt(op.uint16())
-			f := frame.pop()
-			obj := frame.popObject()
-			obj.setField(fieldRef.fieldName(), f)
-		case "invokevirtual":
-			methodRef := class.getMethodRefAt(op.uint16())
-			vm.execute(methodRef.className(), methodRef.methodName(), &frame, true)
-		case "invokespecial":
-			methodRef := class.getMethodRefAt(op.uint16())
-			vm.execute(methodRef.className(), methodRef.methodName(), &frame, false)
-		case "invokestatic":
-			methodRef := class.getMethodRefAt(op.uint16())
-			vm.execute(methodRef.className(), methodRef.methodName(), &frame, false)
-		case "new":
-			classInfo := class.getClassInfoAt(op.uint16())
-			c := vm.resolveClass(classInfo.className())
-			ref := newInstance(&c)
-			frame.push(ref)
-		case "newarray":
-			count := frame.popInt32()
-			arr := make([]javaValue, count)
-			for i, _ := range arr {
-				arr[i] = javaByte(67)
-			}
-			frame.pushArray(arr)
-		case "arraylength":
-			a := frame.popArray()
-			frame.pushInt32(int32(len(a)))
-		default:
-			panic(fmt.Sprintf("Cannot execute instruction: %v", op))
+func runByteCode(vm *VM, frame *Frame) *Frame {
+	op := frame.PC.next()
+	switch op.name {
+	case "nop":
+	case "iconst_0":
+		frame.pushInt32(0)
+	case "iconst_1":
+		frame.pushInt32(1)
+	case "iconst_2":
+		frame.pushInt32(2)
+	case "iconst_3":
+		frame.pushInt32(3)
+	case "iconst_4":
+		frame.pushInt32(4)
+	case "iconst_5":
+		frame.pushInt32(5)
+	case "bipush":
+		frame.pushInt32(int32(op.int8()))
+	case "ldc":
+		s := frame.Class.getStringAt(int(op.int8() - 1))
+		c := vm.resolveClass("java/lang/String")
+		ref := newInstance(&c)
+		arr := make([]javaValue, len(s.contents))
+		for i, _ := range arr {
+			arr[i] = javaByte(s.contents[i])
 		}
+		ref.fields["data"] = javaArray(arr)
+		frame.push(ref)
+	case "ldc2_w":
+		index := op.int16()
+		l := frame.Class.getLongAt(int(index - 1))
+		frame.pushInt64(l.value)
+	case "iload":
+		index := op.int8()
+		frame.push(frame.variables[index])
+	case "iload_0", "aload_0", "lload_0":
+		frame.push(frame.variables[0])
+	case "iload_1", "aload_1", "lload_1":
+		frame.push(frame.variables[1])
+	case "iload_2", "aload_2", "lload_2":
+		frame.push(frame.variables[2])
+	case "iload_3", "aload_3", "lload_3":
+		frame.push(frame.variables[3])
+	case "istore":
+		index := op.int8()
+		frame.variables[index] = frame.pop()
+	case "istore_1", "astore_1":
+		frame.variables[1] = frame.pop()
+	case "istore_2", "astore_2":
+		frame.variables[2] = frame.pop()
+	case "istore_3", "astore_3":
+		frame.variables[3] = frame.pop()
+	case "castore":
+		v := frame.popInt32()
+		i := frame.popInt32()
+		a := frame.popArray()
+		a[int(i)] = javaByte(v)
+	case "caload":
+		i := frame.popInt32()
+		a := frame.popArray()
+		c := byte(a[int(i)].(javaByte))
+		frame.pushInt32(int32(c))
+	case "dup":
+		tmp := frame.pop()
+		frame.push(tmp)
+		frame.push(tmp)
+	case "iadd":
+		//TODO: make sure we do overflow correctly
+		x := frame.popInt32()
+		y := frame.popInt32()
+		frame.pushInt32(x + y)
+	case "isub":
+		//TODO: make sure we do underflow correctly
+		x := frame.popInt32()
+		y := frame.popInt32()
+		frame.pushInt32(y - x)
+	case "imul":
+		x := frame.popInt32()
+		y := frame.popInt32()
+		frame.pushInt32(x * y)
+	case "idiv":
+		x := frame.popInt32()
+		y := frame.popInt32()
+		frame.pushInt32(y / x)
+	case "iinc":
+		index := op.args[0]
+		c := op.args[1]
+		i := frame.variables[index].(javaInt).unbox()
+		frame.variables[index] = javaInt(i + int32(c))
+	case "ladd":
+		//TODO: make sure we do overflow correctly
+		log.Printf("%v\n", frame.items)
+		x := frame.popInt64()
+		y := frame.popInt64()
+		frame.pushInt64(x + y)
+	case "lsub":
+		//TODO: make sure we do underflow correctly
+		x := frame.popInt64()
+		y := frame.popInt64()
+		frame.pushInt64(y - x)
+	case "lmul":
+		x := frame.popInt64()
+		y := frame.popInt64()
+		frame.pushInt64(x * y)
+	case "ldiv":
+		x := frame.popInt64()
+		y := frame.popInt64()
+		frame.pushInt64(y / x)
+	case "ifne":
+		c := frame.popInt32()
+		if c != 0 {
+			frame.PC.jump(int(op.int16()))
+		}
+	case "if_icmpge":
+		v2 := frame.popInt32()
+		v1 := frame.popInt32()
+		if v1 >= v2 {
+			frame.PC.jump(int(op.int16()))
+		}
+	case "if_icmple":
+		v2 := frame.popInt32()
+		v1 := frame.popInt32()
+		if v1 <= v2 {
+			frame.PC.jump(int(op.int16()))
+		}
+	case "goto":
+		frame.PC.jump(int(op.int16()))
+	case "ireturn", "areturn":
+		frame.PreviousFrame.push(frame.pop())
+		return frame.PreviousFrame
+	case "return":
+		return frame.PreviousFrame
+	case "getstatic":
+		fieldRef := frame.Class.getFieldRefAt(op.uint16())
+		c := vm.resolveClass(fieldRef.className())
+		vm.initClass(&c, frame)
+		f := c.getField(fieldRef.fieldName())
+		frame.push(f.value)
+	case "putstatic":
+		fieldRef := frame.Class.getFieldRefAt(op.uint16())
+		c := vm.resolveClass(fieldRef.className())
+		f := c.getField(fieldRef.fieldName())
+		f.value = frame.pop()
+	case "getfield":
+		fieldRef := frame.Class.getFieldRefAt(op.uint16())
+		obj := frame.popObject()
+		f := obj.getField(fieldRef.fieldName())
+		frame.push(f)
+	case "putfield":
+		fieldRef := frame.Class.getFieldRefAt(op.uint16())
+		f := frame.pop()
+		obj := frame.popObject()
+		obj.setField(fieldRef.fieldName(), f)
+	case "invokevirtual":
+		methodRef := frame.Class.getMethodRefAt(op.uint16())
+		return buildFrame(vm, methodRef.className(), methodRef.methodName(), frame, true)
+	case "invokespecial":
+		methodRef := frame.Class.getMethodRefAt(op.uint16())
+		return buildFrame(vm, methodRef.className(), methodRef.methodName(), frame, false)
+	case "invokestatic":
+		methodRef := frame.Class.getMethodRefAt(op.uint16())
+		return buildFrame(vm, methodRef.className(), methodRef.methodName(), frame, false)
+	case "new":
+		classInfo := frame.Class.getClassInfoAt(op.uint16())
+		c := vm.resolveClass(classInfo.className())
+		ref := newInstance(&c)
+		frame.push(ref)
+	case "newarray":
+		count := frame.popInt32()
+		arr := make([]javaValue, count)
+		for i, _ := range arr {
+			arr[i] = javaByte(67)
+		}
+		frame.pushArray(arr)
+	case "arraylength":
+		a := frame.popArray()
+		frame.pushInt32(int32(len(a)))
+	default:
+		panic(fmt.Sprintf("Cannot execute instruction: %v", op))
 	}
+	return frame
 }
 
-func newInstance(c *class) javaObject {
-	return javaObject{c.getName(), make(map[string]javaValue)}
+func newInstance(c *Class) javaObject {
+	return javaObject{c.Name(), make(map[string]javaValue)}
 }
 
-func (vm *VM) initClass(c *class, frame *frame) {
+func (vm *VM) initClass(c *Class, frame *Frame) {
+	vm.frame = buildFrame(vm, c.Name(), "<clinit>", frame, false)
 	if c.initialised {
 		return
 	}
-	vm.execute(c.getName(), "<clinit>", frame, false)
+	vm.execute(c.Name(), "<clinit>", frame, false, true)
 	c.initialised = true
 }
 
@@ -351,6 +434,22 @@ func (s *stack) popInt32() int32 {
 
 func (i javaInt) unbox() int32 {
 	return int32(i)
+}
+
+type javaLong int64
+
+func (_ javaLong) isJavaValue() {}
+
+func (s *stack) pushInt64(l int64) {
+	s.push(javaLong(l))
+}
+
+func (s *stack) popInt64() int64 {
+	return int64(s.pop().(javaLong))
+}
+
+func (i javaLong) unbox() int64 {
+	return int64(i)
 }
 
 type javaByte byte

@@ -8,8 +8,9 @@ import (
 	"log"
 )
 
-type constantPoolItem interface {
+type ConstantPoolItem interface {
 	isConstantPoolItem()
+	String() string
 }
 
 type accessFlags uint16
@@ -27,33 +28,33 @@ const (
 	Enum                   = 0x4000
 )
 
-type code struct {
-	maxStack  uint16
-	maxLocals uint16
-	code      []byte
+type Code struct {
+	maxStack     uint16
+	maxLocals    uint16
+	Instructions []byte
 }
 
-type class struct {
+type Class struct {
 	magic             uint32
 	minorVersion      uint16
 	majorVersion      uint16
-	constantPoolItems []constantPoolItem
+	ConstantPoolItems []ConstantPoolItem
 	accessFlags       accessFlags
 	thisClass         uint16
 	superClass        uint16
 	interfaces        []uint16
 	fields            []field
-	methods           []method
+	methods           []Method
 	initialised       bool
 }
 
-func parseCode(cr classDecoder, length uint32) (c code) {
+func parseCode(cr classDecoder, length uint32) (c Code) {
 	c.maxStack = cr.u2()
 	c.maxLocals = cr.u2()
 	codeLength := cr.u4()
-	c.code = make([]byte, codeLength)
-	for k := 0; k < len(c.code); k++ {
-		c.code[k] = cr.u1()
+	c.Instructions = make([]byte, codeLength)
+	for k := 0; k < len(c.Instructions); k++ {
+		c.Instructions[k] = cr.u1()
 	}
 	for k := uint32(8) + codeLength; k < length; k++ {
 		_ = cr.u1()
@@ -102,17 +103,41 @@ func newClassDecoder(r io.Reader) classDecoder {
 	return cr
 }
 
-func parseClass(r io.Reader) (c class, err error) {
+func parseConstantPool(c *Class, cr classDecoder, constantPoolCount uint16) []ConstantPoolItem {
+	items := make([]ConstantPoolItem, constantPoolCount)
+	for i := uint16(0); i < constantPoolCount; i++ {
+		tag := cr.u1()
+		switch tag {
+		case 1:
+			items[i] = parseUTF8String(c, cr)
+		case 5:
+			items[i] = parseLongConstant(c, cr)
+			i++
+		case 7:
+			items[i] = parseClassInfo(c, cr)
+		case 8:
+			items[i] = parseStringConstant(c, cr)
+		case 9:
+			items[i] = parseFieldRef(c, cr)
+		case 10:
+			items[i] = parseMethodRef(c, cr)
+		case 12:
+			items[i] = parseNameAndType(c, cr)
+		default:
+			log.Fatalf("Unknown tag %d\n", tag)
+		}
+	}
+	return items
+}
+
+func parseClass(r io.Reader) (c Class, err error) {
 	cr := newClassDecoder(r)
 	_ = cr.u2() // minor version
 	_ = cr.u2() // major version
 	cpc := cr.u2()
 	constantPoolCount := cpc - 1
 	if cpc != 0 {
-		c.constantPoolItems = make([]constantPoolItem, constantPoolCount)
-		for i := uint16(0); i < constantPoolCount; i++ {
-			c.constantPoolItems[i] = parseConstantPoolItem(&c, cr)
-		}
+		c.ConstantPoolItems = parseConstantPool(&c, cr, constantPoolCount)
 	}
 
 	c.accessFlags = accessFlags(cr.u2())
@@ -140,24 +165,24 @@ func parseClass(r io.Reader) (c class, err error) {
 	}
 
 	methodsCount := cr.u2()
-	c.methods = make([]method, methodsCount)
+	c.methods = make([]Method, methodsCount)
 	for i := uint16(0); i < methodsCount; i++ {
-		c.methods[i].class = c
+		c.methods[i].class = &c
 		c.methods[i].accessFlags = accessFlags(cr.u2())
 		c.methods[i].nameIndex = cr.u2()
 		c.methods[i].descriptorIndex = cr.u2()
 
 		var sig string
-		sig = c.constantPoolItems[c.methods[i].descriptorIndex-1].(utf8String).contents
+		sig = c.ConstantPoolItems[c.methods[i].descriptorIndex-1].(utf8String).contents
 		c.methods[i].signiture = parseSigniture(sig)
 
 		attrCount := cr.u2()
 		for j := uint16(0); j < attrCount; j++ {
 			name := cr.u2()
 			length := cr.u4()
-			actualName := (c.constantPoolItems[name-1]).(utf8String)
+			actualName := (c.ConstantPoolItems[name-1]).(utf8String)
 			if actualName.contents == "Code" {
-				c.methods[i].code = parseCode(cr, length)
+				c.methods[i].Code = parseCode(cr, length)
 			} else {
 				for k := uint32(0); k < length; k++ {
 					_ = cr.u1() // throw away bytes
@@ -177,9 +202,9 @@ func parseClass(r io.Reader) (c class, err error) {
 	return c, cr.err
 }
 
-func (c *class) hasMethodCalled(name string) bool {
+func (c *Class) hasMethodCalled(name string) bool {
 	for _, m := range c.methods {
-		n := c.constantPoolItems[m.nameIndex-1].(utf8String).contents
+		n := c.ConstantPoolItems[m.nameIndex-1].(utf8String).contents
 		if n == name {
 			return true
 		}
@@ -187,9 +212,9 @@ func (c *class) hasMethodCalled(name string) bool {
 	return false
 }
 
-func (c *class) getMethod(name string) method {
+func (c *Class) resolveMethod(name string) Method {
 	for _, m := range c.methods {
-		n := c.constantPoolItems[m.nameIndex-1].(utf8String).contents
+		n := c.ConstantPoolItems[m.nameIndex-1].(utf8String).contents
 		if n == name {
 			return m
 		}
@@ -197,9 +222,9 @@ func (c *class) getMethod(name string) method {
 	panic(fmt.Sprintf("Could not find method called %v", name))
 }
 
-func (c *class) getField(name string) *field {
+func (c *Class) getField(name string) *field {
 	for i, f := range c.fields {
-		n := c.constantPoolItems[f.nameIndex-1].(utf8String).contents
+		n := c.ConstantPoolItems[f.nameIndex-1].(utf8String).contents
 		if n == name {
 			return &(c.fields[i])
 		}
@@ -207,61 +232,65 @@ func (c *class) getField(name string) *field {
 	panic(fmt.Sprintf("Could not find field called %v", name))
 }
 
-func (c *class) getName() string {
-	info := c.constantPoolItems[c.thisClass-1].(classInfo)
-	name := c.constantPoolItems[info.nameIndex-1].(utf8String)
+func (c *Class) Name() string {
+	info := c.ConstantPoolItems[c.thisClass-1].(classInfo)
+	name := c.ConstantPoolItems[info.nameIndex-1].(utf8String)
 	return name.contents
 }
 
-func (c *class) getSuperName() string {
-	info := c.constantPoolItems[c.superClass-1].(classInfo)
-	name := c.constantPoolItems[info.nameIndex-1].(utf8String)
+func (c *Class) getSuperName() string {
+	info := c.ConstantPoolItems[c.superClass-1].(classInfo)
+	name := c.ConstantPoolItems[info.nameIndex-1].(utf8String)
 	return name.contents
 }
 
-func (c *class) getMethodRefAt(index uint16) methodRef {
-	return c.constantPoolItems[index-1].(methodRef)
+func (c *Class) getMethodRefAt(index uint16) methodRef {
+	return c.ConstantPoolItems[index-1].(methodRef)
 }
 
-func (c *class) getFieldRefAt(index uint16) fieldRef {
-	return c.constantPoolItems[index-1].(fieldRef)
+func (c *Class) getFieldRefAt(index uint16) fieldRef {
+	return c.ConstantPoolItems[index-1].(fieldRef)
 }
 
-func (c *class) getClassInfoAt(index uint16) classInfo {
-	return c.constantPoolItems[index-1].(classInfo)
+func (c *Class) getClassInfoAt(index uint16) classInfo {
+	return c.ConstantPoolItems[index-1].(classInfo)
 }
 
-func (c *class) getStringAt(index int) utf8String {
-	strRef := c.constantPoolItems[index].(stringConstant)
-	return c.constantPoolItems[strRef.utf8Index-1].(utf8String)
+func (c *Class) getStringAt(index int) utf8String {
+	strRef := c.ConstantPoolItems[index].(stringConstant)
+	return c.ConstantPoolItems[strRef.utf8Index-1].(utf8String)
+}
+
+func (c *Class) getLongAt(index int) longConstant {
+	return c.ConstantPoolItems[index].(longConstant)
 }
 
 func (m methodRef) methodName() string {
-	nt := m.containingClass.constantPoolItems[m.nameAndTypeIndex-1].(nameAndType)
-	n := m.containingClass.constantPoolItems[nt.nameIndex-1].(utf8String).contents
+	nt := m.containingClass.ConstantPoolItems[m.nameAndTypeIndex-1].(nameAndType)
+	n := m.containingClass.ConstantPoolItems[nt.nameIndex-1].(utf8String).contents
 	return n
 }
 
 func (m methodRef) className() string {
-	ct := m.containingClass.constantPoolItems[m.classIndex-1].(classInfo)
-	c := m.containingClass.constantPoolItems[ct.nameIndex-1].(utf8String).contents
+	ct := m.containingClass.ConstantPoolItems[m.classIndex-1].(classInfo)
+	c := m.containingClass.ConstantPoolItems[ct.nameIndex-1].(utf8String).contents
 	return c
 }
 
 func (ct classInfo) className() string {
-	c := ct.containingClass.constantPoolItems[ct.nameIndex-1].(utf8String).contents
+	c := ct.containingClass.ConstantPoolItems[ct.nameIndex-1].(utf8String).contents
 	return c
 }
 
 func (m fieldRef) fieldName() string {
-	nt := m.containingClass.constantPoolItems[m.nameAndTypeIndex-1].(nameAndType)
-	n := m.containingClass.constantPoolItems[nt.nameIndex-1].(utf8String).contents
+	nt := m.containingClass.ConstantPoolItems[m.nameAndTypeIndex-1].(nameAndType)
+	n := m.containingClass.ConstantPoolItems[nt.nameIndex-1].(utf8String).contents
 	return n
 }
 
 func (m fieldRef) className() string {
-	ct := m.containingClass.constantPoolItems[m.classIndex-1].(classInfo)
-	c := m.containingClass.constantPoolItems[ct.nameIndex-1].(utf8String).contents
+	ct := m.containingClass.ConstantPoolItems[m.classIndex-1].(classInfo)
+	c := m.containingClass.ConstantPoolItems[ct.nameIndex-1].(utf8String).contents
 	return c
 }
 
@@ -324,7 +353,11 @@ type nameAndType struct {
 
 func (_ nameAndType) isConstantPoolItem() {}
 
-func parseNameAndType(c *class, cr classDecoder) constantPoolItem {
+func (n nameAndType) String() string {
+	return fmt.Sprintf("(NameAndType) name: %d, type: %d", n.nameIndex, n.descriptorIndex)
+}
+
+func parseNameAndType(c *Class, cr classDecoder) ConstantPoolItem {
 	nameIndex := cr.u2()
 	descriptorIndex := cr.u2()
 	return nameAndType{nameIndex, descriptorIndex}
@@ -336,7 +369,11 @@ type utf8String struct {
 
 func (_ utf8String) isConstantPoolItem() {}
 
-func parseUTF8String(c *class, cr classDecoder) constantPoolItem {
+func (u utf8String) String() string {
+	return "(String) \"" + u.contents + "\""
+}
+
+func parseUTF8String(c *Class, cr classDecoder) ConstantPoolItem {
 	length := cr.u2()
 	bytes := make([]byte, length)
 	for i := uint16(0); i < length; i++ {
@@ -346,40 +383,52 @@ func parseUTF8String(c *class, cr classDecoder) constantPoolItem {
 }
 
 type classInfo struct {
-	containingClass *class
+	containingClass *Class
 	nameIndex       uint16
 }
 
 func (_ classInfo) isConstantPoolItem() {}
 
-func parseClassInfo(c *class, cr classDecoder) constantPoolItem {
+func (c classInfo) String() string {
+	return fmt.Sprintf("(ClassInfo) %d", c.nameIndex)
+}
+
+func parseClassInfo(c *Class, cr classDecoder) ConstantPoolItem {
 	nameIndex := cr.u2()
 	return classInfo{c, nameIndex}
 }
 
 type methodRef struct {
-	containingClass  *class
+	containingClass  *Class
 	classIndex       uint16
 	nameAndTypeIndex uint16
 }
 
 func (_ methodRef) isConstantPoolItem() {}
 
-func parseMethodRef(c *class, cr classDecoder) constantPoolItem {
+func (m methodRef) String() string {
+	return fmt.Sprintf("(MethodRef) class: %d, name: %d", m.classIndex, m.nameAndTypeIndex)
+}
+
+func parseMethodRef(c *Class, cr classDecoder) ConstantPoolItem {
 	classIndex := cr.u2()
 	nameAndTypeIndex := cr.u2()
 	return methodRef{c, classIndex, nameAndTypeIndex}
 }
 
 type fieldRef struct {
-	containingClass  *class
+	containingClass  *Class
 	classIndex       uint16
 	nameAndTypeIndex uint16
 }
 
 func (_ fieldRef) isConstantPoolItem() {}
 
-func parseFieldRef(c *class, cr classDecoder) constantPoolItem {
+func (f fieldRef) String() string {
+	return fmt.Sprintf("(FieldRef) class: %d, name %d", f.classIndex, f.nameAndTypeIndex)
+}
+
+func parseFieldRef(c *Class, cr classDecoder) ConstantPoolItem {
 	classIndex := cr.u2()
 	nameAndTypeIndex := cr.u2()
 	return fieldRef{c, classIndex, nameAndTypeIndex}
@@ -391,33 +440,30 @@ type stringConstant struct {
 
 func (_ stringConstant) isConstantPoolItem() {}
 
-func parseStringConstant(c *class, cr classDecoder) constantPoolItem {
+func (s stringConstant) String() string {
+	return fmt.Sprintf("(StringConst) index: %d", s.utf8Index)
+}
+
+func parseStringConstant(c *Class, cr classDecoder) ConstantPoolItem {
 	utf8Index := cr.u2()
 	return stringConstant{utf8Index}
 }
 
-func unknownConstantPoolItem(_ *class, _ classDecoder) constantPoolItem {
-	panic("Unknown constant pool item")
+type longConstant struct {
+	value int64
 }
 
-func parseConstantPoolItem(c *class, cr classDecoder) constantPoolItem {
-	parsers := []func(*class, classDecoder) constantPoolItem{
-		unknownConstantPoolItem,
-		parseUTF8String,
-		unknownConstantPoolItem,
-		unknownConstantPoolItem,
-		unknownConstantPoolItem,
-		unknownConstantPoolItem,
-		unknownConstantPoolItem,
-		parseClassInfo,
-		parseStringConstant,
-		parseFieldRef,
-		parseMethodRef,
-		unknownConstantPoolItem,
-		parseNameAndType,
-	}
-	tag := cr.u1()
-	return parsers[tag](c, cr)
+func (_ longConstant) isConstantPoolItem() {}
+
+func (l longConstant) String() string {
+	return fmt.Sprintf("(Long) %d", l.value)
+}
+
+func parseLongConstant(c *Class, cr classDecoder) ConstantPoolItem {
+	long := int64(cr.u4()) << 32
+	long += int64(cr.u4())
+	log.Printf("Parsed %v\n", long)
+	return longConstant{long}
 }
 
 type field struct {
@@ -427,19 +473,27 @@ type field struct {
 	value           javaValue
 }
 
-type method struct {
-	class           class
+type Method struct {
+	class           *Class
 	signiture       []string
 	accessFlags     accessFlags
 	nameIndex       uint16
 	descriptorIndex uint16
-	code            code
+	Code            Code
 }
 
-func (m method) name() string {
-	return m.class.constantPoolItems[m.nameIndex-1].(utf8String).contents
+func (m *Method) Name() string {
+	return m.class.ConstantPoolItems[m.nameIndex-1].(utf8String).contents
 }
 
-func (m method) numArgs() int {
+func (m *Method) Class() *Class {
+	return m.class
+}
+
+func (m *Method) numArgs() int {
 	return len(m.signiture) - 1
+}
+
+func (m *Method) Sig() []string {
+	return m.signiture
 }
