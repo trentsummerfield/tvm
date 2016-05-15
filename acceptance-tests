@@ -5,17 +5,23 @@ set -e
 : ${RT:="/Library/Java/JavaVirtualMachines/jdk1.8.0_73.jdk/Contents/Home/jre/lib/rt.jar"}
 
 go install ./...
-go test ./...
+#go test ./...
 
 for test in tests/*; do
 	NAME=`cut -d'/' -f2 <<<"$test"`
+	echo "Running $NAME ..."
 	if [[ "$NAME" == "LongArtithmetic" ]]; then
-		echo "Skipping $NAME"
+		echo -e "\033[33mSKIP\033[0m"
 		continue
 	fi
-	echo "Running $NAME"
 	DIR=`mktemp -d -t tvm-tests-XXXXXXX` || (echo "Failed to create tmp directory"; exit 1)
 	javac -bootclasspath stdlib:$RT -d $DIR $test/*.java || (echo "Failed to compile"; exit 1)
 	find stdlib -type f -name '*.java' | xargs javac -d $DIR || (echo "Failed to compile"; exit 1)
 	diff <(find $DIR -type f | xargs $GOPATH/bin/tvm -batch) $test/out
+	if [[ $? -eq 0 ]]; then
+		echo -e "\033[32mPASS\033[0m"
+	else
+		echo -e "\033[31mFAIL\033[0m"
+	fi
+
 done
