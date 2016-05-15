@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 
 	termbox "github.com/nsf/termbox-go"
 	"github.com/trentsummerfield/tvm/java"
@@ -51,6 +50,28 @@ func drawListBox(ui *ui, r *rect, title string, elements []string) {
 	}
 }
 
+func drawFrame(x, y int, frame *java.Frame) int {
+	offset := 0
+	if frame.PreviousFrame != nil {
+		offset += drawFrame(x, y, frame.PreviousFrame)
+		offset += 2
+	}
+	y += offset
+	drawBox(x, y, 120, 120)
+	x++
+	y++
+	class := "ROOT"
+	method := ""
+	if frame.Class != nil {
+		class = frame.Class.Name()
+	}
+	if frame.Method != nil {
+		method = frame.Method.Name()
+	}
+	drawString(x, y, class+"::"+method)
+	return offset
+}
+
 func redraw_all(vm java.VM, ui *ui) {
 	if ui.mouse_click_end && ui.hot_box != nil {
 		ui.hot_box.x = ui.mouse_x
@@ -64,8 +85,9 @@ func redraw_all(vm java.VM, ui *ui) {
 	drawString(0, y, "TVM: The Transparent Virtual Machine")
 	y++
 	frame := vm.ActiveFrame()
-	drawBox(0, 1, 20, 10)
-	drawString(1, 2, fmt.Sprintf("%v::%v", frame.Class.Name(), frame.Method.Name()))
+	if frame != nil {
+		drawFrame(0, 2, frame)
+	}
 	/*
 		method := vm.ActiveMethod()
 		activeMethodStr := method.Class().Name() + "::" + method.Name() + "("
