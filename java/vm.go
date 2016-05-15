@@ -1,17 +1,20 @@
 package java
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"os"
 )
 
 type VM struct {
-	classes           []Class
-	activeMethod      Method
-	nativeMethods     map[string](func(*Frame))
+	classes           []*Class
+	activeMethod      *Method
+	nativeMethods     map[string](func(*Frame, io.Writer))
 	activeInstruction int
 	frame             *Frame
+	stdout            io.Writer
 }
 
 type Frame struct {
@@ -21,11 +24,11 @@ type Frame struct {
 	Method        *Method
 	PC            *ProgramCounter
 	variables     []javaValue
-	root          bool
+	Root          bool
 }
 
 func NewVM() (vm VM) {
-	vm.nativeMethods = map[string](func(*Frame)){
+	vm.nativeMethods = map[string](func(*Frame, io.Writer)){
 		"print":     nativePrintString,
 		"printInt":  nativePrintInteger,
 		"printChar": nativePrintChar,
@@ -33,11 +36,11 @@ func NewVM() (vm VM) {
 	return vm
 }
 
-func (vm *VM) LoadedClasses() []Class {
+func (vm *VM) LoadedClasses() []*Class {
 	return vm.classes
 }
 
-func (vm *VM) ActiveMethod() Method {
+func (vm *VM) ActiveMethod() *Method {
 	return vm.activeMethod
 }
 
@@ -55,14 +58,15 @@ func (vm *VM) LoadClass(path string) {
 	if err != nil {
 		log.Panicf("unable to load %s: %v", path, err)
 	}
-	vm.classes = append(vm.classes, class)
+	vm.classes = append(vm.classes, &class)
 }
 
 func (vm *VM) Run() {
+	vm.stdout = os.Stdout
 	var frame Frame
 	//TODO: push the actual command line arguments onto the stack for the main method.
 	frame.push(nil)
-	frame.root = true
+	frame.Root = true
 	//TODO: this is obviously completely wrong
 	for _, c := range vm.classes {
 		if c.hasMethodCalled("main") {
@@ -73,6 +77,7 @@ func (vm *VM) Run() {
 }
 
 func (vm *VM) Start() {
+	vm.stdout = new(bytes.Buffer)
 	var frame Frame
 	//TODO: push the actual command line arguments onto the stack for the main method.
 	frame.push(nil)
@@ -85,7 +90,7 @@ func (vm *VM) Start() {
 	vm.execute(vm.activeMethod.class.Name(), "main", &frame, false, false)
 }
 
-func nativePrintString(f *Frame) {
+func nativePrintString(f *Frame, w io.Writer) {
 	str := f.variables[0]
 	switch str := str.(type) {
 	default:
@@ -96,24 +101,24 @@ func nativePrintString(f *Frame) {
 		for i, b := range f {
 			bytes[i] = byte(b.(javaByte))
 		}
-		fmt.Print(string(bytes))
+		fmt.Fprint(w, string(bytes))
 	}
 	return
 }
 
-func nativePrintInteger(f *Frame) {
+func nativePrintInteger(f *Frame, w io.Writer) {
 	i := f.variables[0].(javaInt).unbox()
-	fmt.Println(i)
+	fmt.Fprintln(w, i)
 	return
 }
 
-func nativePrintChar(f *Frame) {
+func nativePrintChar(f *Frame, w io.Writer) {
 	i := f.variables[0].(javaInt).unbox()
-	fmt.Printf("%c", i)
+	fmt.Fprintf(w, "%c", i)
 	return
 }
 
-func (vm *VM) resolveClass(name string) Class {
+func (vm *VM) resolveClass(name string) *Class {
 	for _, class := range vm.classes {
 		// TODO: handle packages correctly
 		if class.Name() == name {
@@ -122,10 +127,10 @@ func (vm *VM) resolveClass(name string) Class {
 	}
 	//TODO: raise the appropriate java exception
 	log.Panicf("Could not resolve class %s\n", name)
-	return Class{}
+	return nil
 }
 
-func collectArgs(method Method, frame *Frame) []javaValue {
+func collectArgs(method *Method, frame *Frame) []javaValue {
 	numArgs := method.numArgs()
 	if (method.accessFlags & Static) != 0 {
 		numArgs--
@@ -137,7 +142,7 @@ func collectArgs(method Method, frame *Frame) []javaValue {
 	return args
 }
 
-func newFrame(previousFrame *Frame, method Method, args []javaValue) Frame {
+func newFrame(previousFrame *Frame, method *Method, args []javaValue) Frame {
 	var frame Frame
 	if (method.accessFlags & Native) != 0 {
 		frame.variables = make([]javaValue, method.numArgs())
@@ -148,7 +153,7 @@ func newFrame(previousFrame *Frame, method Method, args []javaValue) Frame {
 		frame.variables[i] = v
 	}
 	frame.Class = method.Class()
-	frame.Method = &method
+	frame.Method = method
 	frame.PreviousFrame = previousFrame
 	pc := newProgramCounter(method.Code.Instructions)
 	frame.PC = &pc
@@ -178,26 +183,26 @@ func (vm *VM) execute(className string, methodName string, previousFrame *Frame,
 	vm.frame = buildFrame(vm, className, methodName, previousFrame, virtual)
 
 	if run {
-		for !vm.frame.root {
-			log.Printf("%v::%v", vm.frame.Class.Name(), vm.frame.Method.Name())
+		for !vm.frame.Root {
 			vm.Step()
 		}
-	} else {
-		vm.Step()
 	}
 }
 
 func (vm *VM) Step() {
-	if (vm.frame.Method.accessFlags & Native) != 0 {
-		methodName := vm.frame.Method.Name()
-		native := vm.nativeMethods[methodName]
-		if native == nil {
-			log.Panicf("Unknown native method %s", methodName)
+	if !vm.frame.Root {
+		if (vm.frame.Method.accessFlags & Native) != 0 {
+			methodName := vm.frame.Method.Name()
+			native := vm.nativeMethods[methodName]
+			if native == nil {
+				log.Panicf("Unknown native method %s", methodName)
+			}
+			native(vm.frame, vm.stdout)
+			vm.frame = vm.frame.PreviousFrame
+		} else {
+			vm.frame = runByteCode(vm, vm.frame)
 		}
-		native(vm.frame)
-		vm.frame = vm.frame.PreviousFrame
 	}
-	vm.frame = runByteCode(vm, vm.frame)
 }
 
 func runByteCode(vm *VM, frame *Frame) *Frame {
@@ -221,7 +226,7 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 	case "ldc":
 		s := frame.Class.getStringAt(int(op.int8() - 1))
 		c := vm.resolveClass("java/lang/String")
-		ref := newInstance(&c)
+		ref := newInstance(c)
 		arr := make([]javaValue, len(s.contents))
 		for i, _ := range arr {
 			arr[i] = javaByte(s.contents[i])
@@ -291,7 +296,6 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		frame.variables[index] = javaInt(i + int32(c))
 	case "ladd":
 		//TODO: make sure we do overflow correctly
-		log.Printf("%v\n", frame.items)
 		x := frame.popInt64()
 		y := frame.popInt64()
 		frame.pushInt64(x + y)
@@ -335,7 +339,7 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 	case "getstatic":
 		fieldRef := frame.Class.getFieldRefAt(op.uint16())
 		c := vm.resolveClass(fieldRef.className())
-		vm.initClass(&c, frame)
+		vm.initClass(c, frame)
 		f := c.getField(fieldRef.fieldName())
 		frame.push(f.value)
 	case "putstatic":
@@ -365,7 +369,7 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 	case "new":
 		classInfo := frame.Class.getClassInfoAt(op.uint16())
 		c := vm.resolveClass(classInfo.className())
-		ref := newInstance(&c)
+		ref := newInstance(c)
 		frame.push(ref)
 	case "newarray":
 		count := frame.popInt32()
@@ -388,12 +392,14 @@ func newInstance(c *Class) javaObject {
 }
 
 func (vm *VM) initClass(c *Class, frame *Frame) {
-	vm.frame = buildFrame(vm, c.Name(), "<clinit>", frame, false)
 	if c.initialised {
 		return
 	}
-	vm.execute(c.Name(), "<clinit>", frame, false, true)
 	c.initialised = true
+	vm.frame = buildFrame(vm, c.Name(), "<clinit>", frame, false)
+	for vm.frame != frame {
+		vm.Step()
+	}
 }
 
 type stack struct {

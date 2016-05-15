@@ -212,11 +212,11 @@ func (c *Class) hasMethodCalled(name string) bool {
 	return false
 }
 
-func (c *Class) resolveMethod(name string) Method {
-	for _, m := range c.methods {
+func (c *Class) resolveMethod(name string) *Method {
+	for i, m := range c.methods {
 		n := c.ConstantPoolItems[m.nameIndex-1].(utf8String).contents
 		if n == name {
-			return m
+			return &c.methods[i]
 		}
 	}
 	panic(fmt.Sprintf("Could not find method called %v", name))
