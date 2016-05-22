@@ -10,14 +10,15 @@ go install ./...
 for test in tests/*; do
 	NAME=`cut -d'/' -f2 <<<"$test"`
 	echo "Running $NAME ..."
-	if [[ "$NAME" == "LongArtithmetic" ]]; then
-		echo -e "\033[33mSKIP\033[0m"
-		continue
-	fi
+    #if [[ "$NAME" == "LongArtithmetic" ]]; then
+    #	echo -e "\033[33mSKIP\033[0m"
+    #	continue
+    #fi
 	DIR=`mktemp -d -t tvm-tests-XXXXXXX` || (echo "Failed to create tmp directory"; exit 1)
 	javac -bootclasspath stdlib:$RT -d $DIR $test/*.java || (echo "Failed to compile"; exit 1)
 	find stdlib -type f -name '*.java' | xargs javac -d $DIR || (echo "Failed to compile"; exit 1)
-	diff <(find $DIR -type f | xargs $GOPATH/bin/tvm -batch) $test/out
+	#find $DIR -type f
+	diff <(find $DIR -type f | xargs tvm -batch) $test/out
 	if [[ $? -eq 0 ]]; then
 		echo -e "\033[32mPASS\033[0m"
 	else

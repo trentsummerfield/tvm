@@ -9,12 +9,11 @@ import (
 )
 
 type VM struct {
-	classes           []*Class
-	activeMethod      *Method
-	nativeMethods     map[string](func(*Frame, io.Writer))
-	activeInstruction int
-	frame             *Frame
-	stdout            io.Writer
+	classes       []*Class
+	activeMethod  *Method
+	nativeMethods map[string](func(*Frame, io.Writer))
+	frame         *Frame
+	stdout        io.Writer
 }
 
 type Frame struct {
@@ -31,6 +30,7 @@ func NewVM() (vm VM) {
 	vm.nativeMethods = map[string](func(*Frame, io.Writer)){
 		"print":     nativePrintString,
 		"printInt":  nativePrintInteger,
+		"printLong": nativePrintLong,
 		"printChar": nativePrintChar,
 	}
 	return vm
@@ -46,10 +46,6 @@ func (vm *VM) ActiveMethod() *Method {
 
 func (vm *VM) ActiveFrame() *Frame {
 	return vm.frame
-}
-
-func (vm *VM) ActiveInstruction() int {
-	return vm.activeInstruction
 }
 
 func (vm *VM) LoadClass(path string) {
@@ -112,6 +108,12 @@ func nativePrintInteger(f *Frame, w io.Writer) {
 	return
 }
 
+func nativePrintLong(f *Frame, w io.Writer) {
+	i := f.variables[0].(javaLong).unbox()
+	fmt.Fprintln(w, i)
+	return
+}
+
 func nativePrintChar(f *Frame, w io.Writer) {
 	i := f.variables[0].(javaInt).unbox()
 	fmt.Fprintf(w, "%c", i)
@@ -149,8 +151,13 @@ func newFrame(previousFrame *Frame, method *Method, args []javaValue) Frame {
 	} else {
 		frame.variables = make([]javaValue, method.Code.maxLocals)
 	}
+	offset := 0
 	for i, v := range args {
-		frame.variables[i] = v
+		frame.variables[i+offset] = v
+		_, isLong := v.(javaLong)
+		if isLong {
+			offset++
+		}
 	}
 	frame.Class = method.Class()
 	frame.Method = method
@@ -331,7 +338,7 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		}
 	case "goto":
 		frame.PC.jump(int(op.int16()))
-	case "ireturn", "areturn":
+	case "ireturn", "lreturn", "areturn":
 		frame.PreviousFrame.push(frame.pop())
 		return frame.PreviousFrame
 	case "return":
@@ -403,7 +410,7 @@ func (vm *VM) initClass(c *Class, frame *Frame) {
 }
 
 type stack struct {
-	items []javaValue
+	Items []javaValue
 	size  uint
 }
 
@@ -412,7 +419,7 @@ type javaValue interface {
 }
 
 func (s *stack) push(e javaValue) {
-	s.items = append(s.items, e)
+	s.Items = append(s.Items, e)
 	s.size++
 }
 
@@ -420,9 +427,9 @@ func (s *stack) pop() javaValue {
 	if s.size == 0 {
 		panic("Cannot pop from an empty stack")
 	}
-	e := s.items[s.size-1]
+	e := s.Items[s.size-1]
 	s.size--
-	s.items = s.items[:s.size]
+	s.Items = s.Items[:s.size]
 	return e
 }
 

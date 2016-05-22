@@ -12,11 +12,11 @@ type OpCode struct {
 	args []byte
 }
 
-func (op *OpCode) Name() string {
+func (op OpCode) Name() string {
 	return op.name
 }
 
-func (op *OpCode) String() string {
+func (op OpCode) String() string {
 	result := make([]string, len(op.args)+1)
 	result[0] = op.Name()
 	for i, a := range op.args {
@@ -25,7 +25,7 @@ func (op *OpCode) String() string {
 	return strings.Join(result, " ")
 }
 
-func (op *OpCode) width() int {
+func (op OpCode) Width() int {
 	return len(op.args) + 1
 }
 
@@ -144,6 +144,8 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "goto", bytes[1:3]}
 	case 172:
 		return OpCode{b, "ireturn", nil}
+	case 173:
+		return OpCode{b, "lreturn", nil}
 	case 176:
 		return OpCode{b, "areturn", nil}
 	case 177:
@@ -175,10 +177,10 @@ func bytesToOpcode(bytes []byte) OpCode {
 }
 
 type ProgramCounter struct {
-	bytecodes []byte
-	pos       int
-	lastop    OpCode
-	ops       []OpCode
+	RawByteCodes     []byte
+	RawByteCodeIndex int
+	OpCodeIndex      int
+	OpCodes          []OpCode
 }
 
 func opsFromBytes(bytes []byte) []OpCode {
@@ -187,45 +189,40 @@ func opsFromBytes(bytes []byte) []OpCode {
 	for i < len(bytes) {
 		op := bytesToOpcode(bytes[i:])
 		ops = append(ops, op)
-		i += op.width()
+		i += op.Width()
 	}
 	return ops
 }
 
 func newProgramCounter(bytes []byte) ProgramCounter {
-	return ProgramCounter{bytes, 0, OpCode{}, opsFromBytes(bytes)}
+	return ProgramCounter{bytes, 0, 0, opsFromBytes(bytes)}
+}
+
+func (pc *ProgramCounter) OpCode() OpCode {
+	return pc.OpCodes[pc.OpCodeIndex]
 }
 
 func (pc *ProgramCounter) next() OpCode {
-	op := bytesToOpcode(pc.bytecodes[pc.pos:])
-	pc.pos += op.width()
-	pc.lastop = op
-	/*
-		op := pc.ops[pc.pos]
-		pc.pos++
-	*/
+	op := pc.OpCode()
+	pc.RawByteCodeIndex += op.Width()
+	pc.OpCodeIndex++
 	return op
 }
 
 func (pc *ProgramCounter) jump(offset int) {
-	pc.pos -= pc.lastop.width()
-	pc.pos += offset
-	/*
-		pc.pos-- //jumps are relative to the start of the last operation
-		if offset < 0 {
-			for offset < 0 {
-				pc.pos--
-				offset += pc.ops[pc.pos].width()
-			}
-		} else {
-			for offset > 0 {
-				pc.pos++
-				offset -= pc.ops[pc.pos].width()
-			}
-		}
-	*/
-}
+	pc.OpCodeIndex--
+	pc.RawByteCodeIndex -= pc.OpCode().Width()
+	pc.RawByteCodeIndex += offset
 
-func (pc *ProgramCounter) Ops() []OpCode {
-	return pc.ops
+	if offset < 0 {
+		for offset < 0 {
+			pc.OpCodeIndex--
+			offset += pc.OpCode().Width()
+		}
+	} else {
+		for offset > 0 {
+			offset -= pc.OpCode().Width()
+			pc.OpCodeIndex++
+		}
+	}
 }

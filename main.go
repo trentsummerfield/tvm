@@ -2,15 +2,25 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"strings"
 
 	termbox "github.com/nsf/termbox-go"
 	"github.com/trentsummerfield/tvm/java"
 )
 
-func drawString(x, y int, s string) {
-	const coldef = termbox.ColorDefault
+func drawString(x, y int, s string, color ...termbox.Attribute) {
+	fg := termbox.ColorDefault
+	bg := termbox.ColorDefault
+	l := len(color)
+	if l > 0 {
+		fg = color[0]
+	}
+	if l > 1 {
+		bg = color[1]
+	}
 	for i, c := range s {
-		termbox.SetCell(x+i, y, c, coldef, coldef)
+		termbox.SetCell(x+i, y, c, fg, bg)
 	}
 }
 
@@ -28,6 +38,11 @@ func drawBox(x, y, w, h int) {
 	for i := y + 1; i < y+h; i++ {
 		termbox.SetCell(x, i, '│', coldef, coldef)
 		termbox.SetCell(x+w, i, '│', coldef, coldef)
+	}
+	for i := x + 1; i < x+w-1; i++ {
+		for j := y + 1; j < y+h-1; j++ {
+			termbox.SetCell(i, j, ' ', coldef, coldef)
+		}
 	}
 }
 
@@ -62,13 +77,50 @@ func drawFrame(x, y int, frame *java.Frame) int {
 	y++
 	class := "ROOT"
 	method := ""
+	sig := ""
+	ret := "void"
 	if frame.Class != nil {
 		class = frame.Class.Name()
 	}
 	if frame.Method != nil {
 		method = frame.Method.Name()
+		sig = strings.Join(frame.Method.Signiture[:len(frame.Method.Signiture)-1], ", ")
+		ret = frame.Method.Signiture[len(frame.Method.Signiture)-1]
 	}
-	drawString(x, y, class+"::"+method)
+	drawString(x, y, ret+" "+class+"::"+method+"("+sig+")")
+	y++
+	if frame.PC != nil {
+		drawString(x, y, "Byte Code Stream")
+		for i, b := range frame.PC.RawByteCodes {
+			fg := termbox.ColorDefault
+			if i == frame.PC.RawByteCodeIndex {
+				fg = termbox.ColorRed
+			}
+			drawString(x, y+i+1, fmt.Sprintf("%d", b), fg)
+		}
+
+		yoffset := 0
+		xoffset := 20
+		drawString(x+xoffset, y, "Parsed Code Stream")
+		for i, b := range frame.PC.OpCodes {
+			fg := termbox.ColorDefault
+			if i == frame.PC.OpCodeIndex {
+				fg = termbox.ColorRed
+			}
+			drawString(x+xoffset, y+i+1+yoffset, b.Name(), fg)
+			yoffset += b.Width() - 1
+		}
+
+		yoffset = 0
+		xoffset = 40
+		drawString(x+xoffset, y, "Stack")
+		stack := frame.Items
+		for i := len(stack) - 1; i >= 0; i-- {
+			item := stack[i]
+			drawString(x+xoffset, y+1+yoffset, fmt.Sprintf("%v", item))
+			yoffset++
+		}
+	}
 	return offset
 }
 
@@ -88,53 +140,6 @@ func redraw_all(vm java.VM, ui *ui) {
 	if frame != nil {
 		drawFrame(0, 2, frame)
 	}
-	/*
-		method := vm.ActiveMethod()
-		activeMethodStr := method.Class().Name() + "::" + method.Name() + "("
-		activeMethodStr += strings.Join(method.Sig(), ", ")
-		activeMethodStr += ")"
-		drawString(ui, 0, y, "Executing "+activeMethodStr)
-		y++
-		classes := vm.LoadedClasses()
-		classNames := make([]string, len(classes))
-		for i, c := range classes {
-			classNames[i] = c.Name()
-		}
-		if drawListBox(ui, &ui.loaded_classes, "Loaded Classes", classNames) {
-			ui.hot_box = &ui.loaded_classes
-		}
-
-		if ui.mouse_click_start {
-			drawString(ui, 0, y, "CLICK")
-			y++
-		}
-
-		activeClass := method.Class()
-		var lines []string
-		lines = append(lines, "Name: "+activeClass.Name())
-		lines = append(lines, "Constant Pool: ")
-		for i, cpi := range activeClass.ConstantPoolItems {
-			lines = append(lines, fmt.Sprintf("[%2d] %s", i+1, cpi.String()))
-		}
-		drawListBox(ui, &rect{x: 30, y: 3, w: 40, h: 40}, "Active Class", lines)
-
-		lines = make([]string, 0)
-
-		/*
-			pc := method.ProgramCounter()
-			for i, bc := range pc.Ops() {
-				lines = append(lines, fmt.Sprintf("[%2d] %v", i+1, bc.String()))
-			}
-			drawListBox(ui, &rect{x: 71, y: 3, w: 25, h: 40}, "Operations", lines)
-	*/
-	/*
-		lines = make([]string, 0)
-		for i, bc := range method.Code.Instructions {
-			lines = append(lines, fmt.Sprintf("[%2d] %v", i+1, bc))
-		}
-		drawListBox(ui, &rect{x: 97, y: 3, w: 25, h: 40}, "Byte Code", lines)
-	*/
-
 }
 
 type rect struct {

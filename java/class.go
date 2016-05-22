@@ -174,7 +174,7 @@ func parseClass(r io.Reader) (c Class, err error) {
 
 		var sig string
 		sig = c.ConstantPoolItems[c.methods[i].descriptorIndex-1].(utf8String).contents
-		c.methods[i].signiture = parseSigniture(sig)
+		c.methods[i].Signiture = parseSigniture(sig)
 
 		attrCount := cr.u2()
 		for j := uint16(0); j < attrCount; j++ {
@@ -462,7 +462,6 @@ func (l longConstant) String() string {
 func parseLongConstant(c *Class, cr classDecoder) ConstantPoolItem {
 	long := int64(cr.u4()) << 32
 	long += int64(cr.u4())
-	log.Printf("Parsed %v\n", long)
 	return longConstant{long}
 }
 
@@ -475,7 +474,7 @@ type field struct {
 
 type Method struct {
 	class           *Class
-	signiture       []string
+	Signiture       []string
 	accessFlags     accessFlags
 	nameIndex       uint16
 	descriptorIndex uint16
@@ -491,9 +490,9 @@ func (m *Method) Class() *Class {
 }
 
 func (m *Method) numArgs() int {
-	return len(m.signiture) - 1
+	return len(m.Signiture) - 1
 }
 
 func (m *Method) Sig() []string {
-	return m.signiture
+	return m.Signiture
 }
