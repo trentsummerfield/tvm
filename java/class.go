@@ -121,6 +121,8 @@ func parseConstantPool(c *Class, cr classDecoder, constantPoolCount uint16) []Co
 			items[i] = parseFieldRef(c, cr)
 		case 10:
 			items[i] = parseMethodRef(c, cr)
+		case 11:
+			items[i] = parseInterfaceMethodRef(c, cr)
 		case 12:
 			items[i] = parseNameAndType(c, cr)
 		default:
@@ -146,6 +148,9 @@ func parseClass(r io.Reader) (c Class, err error) {
 
 	interfacesCount := cr.u2()
 	c.interfaces = make([]uint16, interfacesCount)
+	for i := uint16(0); i < interfacesCount; i++ {
+		c.interfaces[i] = cr.u2()
+	}
 
 	fieldsCount := cr.u2()
 	c.fields = make([]field, fieldsCount)
@@ -248,6 +253,10 @@ func (c *Class) getMethodRefAt(index uint16) methodRef {
 	return c.ConstantPoolItems[index-1].(methodRef)
 }
 
+func (c *Class) getInterfaceMethodRefAt(index uint16) interfaceMethodRef {
+	return c.ConstantPoolItems[index-1].(interfaceMethodRef)
+}
+
 func (c *Class) getFieldRefAt(index uint16) fieldRef {
 	return c.ConstantPoolItems[index-1].(fieldRef)
 }
@@ -272,6 +281,18 @@ func (m methodRef) methodName() string {
 }
 
 func (m methodRef) className() string {
+	ct := m.containingClass.ConstantPoolItems[m.classIndex-1].(classInfo)
+	c := m.containingClass.ConstantPoolItems[ct.nameIndex-1].(utf8String).contents
+	return c
+}
+
+func (m interfaceMethodRef) methodName() string {
+	nt := m.containingClass.ConstantPoolItems[m.nameAndTypeIndex-1].(nameAndType)
+	n := m.containingClass.ConstantPoolItems[nt.nameIndex-1].(utf8String).contents
+	return n
+}
+
+func (m interfaceMethodRef) className() string {
 	ct := m.containingClass.ConstantPoolItems[m.classIndex-1].(classInfo)
 	c := m.containingClass.ConstantPoolItems[ct.nameIndex-1].(utf8String).contents
 	return c
@@ -414,6 +435,24 @@ func parseMethodRef(c *Class, cr classDecoder) ConstantPoolItem {
 	classIndex := cr.u2()
 	nameAndTypeIndex := cr.u2()
 	return methodRef{c, classIndex, nameAndTypeIndex}
+}
+
+type interfaceMethodRef struct {
+	containingClass  *Class
+	classIndex       uint16
+	nameAndTypeIndex uint16
+}
+
+func (_ interfaceMethodRef) isConstantPoolItem() {}
+
+func (i interfaceMethodRef) String() string {
+	return fmt.Sprintf("(InterfaceMethodRef) class: %d, name: %d", i.classIndex, i.nameAndTypeIndex)
+}
+
+func parseInterfaceMethodRef(c *Class, cr classDecoder) ConstantPoolItem {
+	classIndex := cr.u2()
+	nameAndTypeIndex := cr.u2()
+	return interfaceMethodRef{c, classIndex, nameAndTypeIndex}
 }
 
 type fieldRef struct {

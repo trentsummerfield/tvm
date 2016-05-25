@@ -164,6 +164,8 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "invokespecial", bytes[1:3]}
 	case 184:
 		return OpCode{b, "invokestatic", bytes[1:3]}
+	case 185:
+		return OpCode{b, "invokeinterface", bytes[1:5]}
 	case 187:
 		return OpCode{b, "new", bytes[1:3]}
 	case 188:

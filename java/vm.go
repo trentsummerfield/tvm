@@ -373,6 +373,9 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 	case "invokestatic":
 		methodRef := frame.Class.getMethodRefAt(op.uint16())
 		return buildFrame(vm, methodRef.className(), methodRef.methodName(), frame, false)
+	case "invokeinterface":
+		methodRef := frame.Class.getInterfaceMethodRefAt(op.uint16())
+		return buildFrame(vm, methodRef.className(), methodRef.methodName(), frame, true)
 	case "new":
 		classInfo := frame.Class.getClassInfoAt(op.uint16())
 		c := vm.resolveClass(classInfo.className())
