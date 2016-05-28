@@ -242,6 +242,8 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 	case "ldc":
 		index := uint16(op.int8())
 		switch constant := frame.Class.getConstantPoolItemAt(index).(type) {
+		case intConstant:
+			frame.pushInt32(constant.value)
 		case floatConstant:
 			frame.pushFloat32(constant.value)
 		case stringConstant:

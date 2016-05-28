@@ -111,6 +111,8 @@ func parseConstantPool(c *Class, cr classDecoder, constantPoolCount uint16) []Co
 		switch tag {
 		case 1:
 			items[i] = parseUTF8String(c, cr)
+		case 3:
+			items[i] = parseIntConstant(c, cr)
 		case 4:
 			items[i] = parseFloatConstant(c, cr)
 		case 5:
@@ -493,6 +495,21 @@ func (s stringConstant) String() string {
 func parseStringConstant(c *Class, cr classDecoder) ConstantPoolItem {
 	utf8Index := cr.u2()
 	return stringConstant{utf8Index}
+}
+
+type intConstant struct {
+	value int32
+}
+
+func (_ intConstant) isConstantPoolItem() {}
+
+func (i intConstant) String() string {
+	return fmt.Sprintf("(Int) %d", i.value)
+}
+
+func parseIntConstant(c *Class, cr classDecoder) ConstantPoolItem {
+	i := int32(cr.u4())
+	return intConstant{i}
 }
 
 type longConstant struct {
