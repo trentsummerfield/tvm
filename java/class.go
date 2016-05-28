@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 )
 
 type ConstantPoolItem interface {
@@ -110,6 +111,8 @@ func parseConstantPool(c *Class, cr classDecoder, constantPoolCount uint16) []Co
 		switch tag {
 		case 1:
 			items[i] = parseUTF8String(c, cr)
+		case 4:
+			items[i] = parseFloatConstant(c, cr)
 		case 5:
 			items[i] = parseLongConstant(c, cr)
 			i++
@@ -263,6 +266,10 @@ func (c *Class) getFieldRefAt(index uint16) fieldRef {
 
 func (c *Class) getClassInfoAt(index uint16) classInfo {
 	return c.ConstantPoolItems[index-1].(classInfo)
+}
+
+func (c *Class) getConstantPoolItemAt(index uint16) ConstantPoolItem {
+	return c.ConstantPoolItems[index-1]
 }
 
 func (c *Class) getStringAt(index int) utf8String {
@@ -502,6 +509,21 @@ func parseLongConstant(c *Class, cr classDecoder) ConstantPoolItem {
 	long := int64(cr.u4()) << 32
 	long += int64(cr.u4())
 	return longConstant{long}
+}
+
+type floatConstant struct {
+	value float32
+}
+
+func (_ floatConstant) isConstantPoolItem() {}
+
+func (f floatConstant) String() string {
+	return fmt.Sprintf("(Float) %f", f.value)
+}
+
+func parseFloatConstant(c *Class, cr classDecoder) ConstantPoolItem {
+	bits := cr.u4()
+	return floatConstant{math.Float32frombits(bits)}
 }
 
 type field struct {

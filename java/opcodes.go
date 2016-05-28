@@ -64,6 +64,8 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "iconst_4", nil}
 	case 8:
 		return OpCode{b, "iconst_5", nil}
+	case 13:
+		return OpCode{b, "fconst_2", nil}
 	case 16:
 		return OpCode{b, "bipush", bytes[1:2]}
 	case 18:
@@ -88,6 +90,10 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "lload_2", nil}
 	case 33:
 		return OpCode{b, "lload_3", nil}
+	case 34:
+		return OpCode{b, "fload_0", nil}
+	case 35:
+		return OpCode{b, "fload_1", nil}
 	case 42:
 		return OpCode{b, "aload_0", nil}
 	case 43:
@@ -120,18 +126,26 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "iadd", nil}
 	case 97:
 		return OpCode{b, "ladd", nil}
+	case 98:
+		return OpCode{b, "fadd", nil}
 	case 100:
 		return OpCode{b, "isub", nil}
 	case 101:
 		return OpCode{b, "lsub", nil}
+	case 102:
+		return OpCode{b, "fsub", nil}
 	case 104:
 		return OpCode{b, "imul", nil}
 	case 105:
 		return OpCode{b, "lmul", nil}
+	case 106:
+		return OpCode{b, "fmul", nil}
 	case 108:
 		return OpCode{b, "idiv", nil}
 	case 109:
 		return OpCode{b, "ldiv", nil}
+	case 110:
+		return OpCode{b, "fdiv", nil}
 	case 132:
 		return OpCode{b, "iinc", bytes[1:3]}
 	case 154:
@@ -146,6 +160,8 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "ireturn", nil}
 	case 173:
 		return OpCode{b, "lreturn", nil}
+	case 174:
+		return OpCode{b, "freturn", nil}
 	case 176:
 		return OpCode{b, "areturn", nil}
 	case 177:

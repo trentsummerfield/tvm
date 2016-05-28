@@ -28,10 +28,11 @@ type Frame struct {
 
 func NewVM() (vm VM) {
 	vm.nativeMethods = map[string](func(*Frame, io.Writer)){
-		"print":     nativePrintString,
-		"printInt":  nativePrintInteger,
-		"printLong": nativePrintLong,
-		"printChar": nativePrintChar,
+		"print":      nativePrintString,
+		"printInt":   nativePrintInteger,
+		"printLong":  nativePrintLong,
+		"printFloat": nativePrintFloat,
+		"printChar":  nativePrintChar,
 	}
 	return vm
 }
@@ -111,6 +112,12 @@ func nativePrintInteger(f *Frame, w io.Writer) {
 func nativePrintLong(f *Frame, w io.Writer) {
 	i := f.variables[0].(javaLong).unbox()
 	fmt.Fprintln(w, i)
+	return
+}
+
+func nativePrintFloat(f *Frame, w io.Writer) {
+	float := f.variables[0].(javaFloat).unbox()
+	fmt.Fprintln(w, float)
 	return
 }
 
@@ -228,18 +235,28 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		frame.pushInt32(4)
 	case "iconst_5":
 		frame.pushInt32(5)
+	case "fconst_2":
+		frame.pushFloat32(2.0)
 	case "bipush":
 		frame.pushInt32(int32(op.int8()))
 	case "ldc":
-		s := frame.Class.getStringAt(int(op.int8() - 1))
-		c := vm.resolveClass("java/lang/String")
-		ref := newInstance(c)
-		arr := make([]javaValue, len(s.contents))
-		for i, _ := range arr {
-			arr[i] = javaByte(s.contents[i])
+		index := uint16(op.int8())
+		switch constant := frame.Class.getConstantPoolItemAt(index).(type) {
+		case floatConstant:
+			frame.pushFloat32(constant.value)
+		case stringConstant:
+			s := frame.Class.getStringAt(int(index - 1))
+			c := vm.resolveClass("java/lang/String")
+			ref := newInstance(c)
+			arr := make([]javaValue, len(s.contents))
+			for i, _ := range arr {
+				arr[i] = javaByte(s.contents[i])
+			}
+			ref.fields["data"] = javaArray(arr)
+			frame.push(ref)
+		default:
+			log.Fatalf("Cannot load unknown constant %v", constant)
 		}
-		ref.fields["data"] = javaArray(arr)
-		frame.push(ref)
 	case "ldc2_w":
 		index := op.int16()
 		l := frame.Class.getLongAt(int(index - 1))
@@ -247,9 +264,9 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 	case "iload":
 		index := op.int8()
 		frame.push(frame.variables[index])
-	case "iload_0", "aload_0", "lload_0":
+	case "iload_0", "aload_0", "lload_0", "fload_0":
 		frame.push(frame.variables[0])
-	case "iload_1", "aload_1", "lload_1":
+	case "iload_1", "aload_1", "lload_1", "fload_1":
 		frame.push(frame.variables[1])
 	case "iload_2", "aload_2", "lload_2":
 		frame.push(frame.variables[2])
@@ -319,6 +336,22 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		x := frame.popInt64()
 		y := frame.popInt64()
 		frame.pushInt64(y / x)
+	case "fadd":
+		x := frame.popFloat32()
+		y := frame.popFloat32()
+		frame.pushFloat32(x + y)
+	case "fsub":
+		x := frame.popFloat32()
+		y := frame.popFloat32()
+		frame.pushFloat32(y - x)
+	case "fmul":
+		x := frame.popFloat32()
+		y := frame.popFloat32()
+		frame.pushFloat32(x * y)
+	case "fdiv":
+		x := frame.popFloat32()
+		y := frame.popFloat32()
+		frame.pushFloat32(y / x)
 	case "ifne":
 		c := frame.popInt32()
 		if c != 0 {
@@ -338,7 +371,7 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		}
 	case "goto":
 		frame.PC.jump(int(op.int16()))
-	case "ireturn", "lreturn", "areturn":
+	case "ireturn", "lreturn", "areturn", "freturn":
 		frame.PreviousFrame.push(frame.pop())
 		return frame.PreviousFrame
 	case "return":
@@ -466,6 +499,22 @@ func (s *stack) popInt64() int64 {
 
 func (i javaLong) unbox() int64 {
 	return int64(i)
+}
+
+type javaFloat float32
+
+func (_ javaFloat) isJavaValue() {}
+
+func (s *stack) pushFloat32(f float32) {
+	s.push(javaFloat(f))
+}
+
+func (s *stack) popFloat32() float32 {
+	return float32(s.pop().(javaFloat))
+}
+
+func (f javaFloat) unbox() float32 {
+	return float32(f)
 }
 
 type javaByte byte
