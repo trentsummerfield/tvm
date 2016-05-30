@@ -52,6 +52,8 @@ func bytesToOpcode(bytes []byte) OpCode {
 	switch b {
 	case 0:
 		return OpCode{b, "nop", nil}
+	case 1:
+		return OpCode{b, "aconst_null", nil}
 	case 3:
 		return OpCode{b, "iconst_0", nil}
 	case 4:
@@ -188,6 +190,10 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "newarray", bytes[1:2]}
 	case 190:
 		return OpCode{b, "arraylength", nil}
+	case 198:
+		return OpCode{b, "ifnull", bytes[1:3]}
+	case 199:
+		return OpCode{b, "ifnonnull", bytes[1:3]}
 	default:
 		log.Panicf("Unknown instruction: %v", b)
 	}

@@ -185,6 +185,7 @@ func parseClass(r io.Reader) (c Class, err error) {
 		var sig string
 		sig = c.ConstantPoolItems[c.methods[i].descriptorIndex-1].(utf8String).contents
 		c.methods[i].Signiture = parseSigniture(sig)
+		c.methods[i].RawSigniture = sig
 
 		attrCount := cr.u2()
 		for j := uint16(0); j < attrCount; j++ {
@@ -222,14 +223,15 @@ func (c *Class) hasMethodCalled(name string) bool {
 	return false
 }
 
-func (c *Class) resolveMethod(name string) *Method {
+func (c *Class) resolveMethod(name string, descriptor string) *Method {
 	for i, m := range c.methods {
 		n := c.ConstantPoolItems[m.nameIndex-1].(utf8String).contents
-		if n == name {
+		d := c.ConstantPoolItems[m.descriptorIndex-1].(utf8String).contents
+		if n == name && d == descriptor {
 			return &c.methods[i]
 		}
 	}
-	panic(fmt.Sprintf("Could not find method called %v", name))
+	return nil
 }
 
 func (c *Class) getField(name string) *field {
@@ -295,10 +297,22 @@ func (m methodRef) className() string {
 	return c
 }
 
+func (m methodRef) methodType() string {
+	nt := m.containingClass.ConstantPoolItems[m.nameAndTypeIndex-1].(nameAndType)
+	t := m.containingClass.ConstantPoolItems[nt.descriptorIndex-1].(utf8String).contents
+	return t
+}
+
 func (m interfaceMethodRef) methodName() string {
 	nt := m.containingClass.ConstantPoolItems[m.nameAndTypeIndex-1].(nameAndType)
 	n := m.containingClass.ConstantPoolItems[nt.nameIndex-1].(utf8String).contents
 	return n
+}
+
+func (m interfaceMethodRef) methodType() string {
+	nt := m.containingClass.ConstantPoolItems[m.nameAndTypeIndex-1].(nameAndType)
+	t := m.containingClass.ConstantPoolItems[nt.descriptorIndex-1].(utf8String).contents
+	return t
 }
 
 func (m interfaceMethodRef) className() string {
@@ -553,6 +567,7 @@ type field struct {
 type Method struct {
 	class           *Class
 	Signiture       []string
+	RawSigniture    string
 	accessFlags     accessFlags
 	nameIndex       uint16
 	descriptorIndex uint16

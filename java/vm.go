@@ -67,10 +67,10 @@ func (vm *VM) Run() {
 	//TODO: this is obviously completely wrong
 	for _, c := range vm.classes {
 		if c.hasMethodCalled("main") {
-			vm.activeMethod = c.resolveMethod("main")
+			vm.activeMethod = c.resolveMethod("main", "([Ljava/lang/String;)V")
 		}
 	}
-	vm.execute(vm.activeMethod.class.Name(), "main", &frame, false, true)
+	vm.execute(vm.activeMethod.class.Name(), vm.activeMethod.Name(), vm.activeMethod.RawSigniture, &frame, false, true)
 }
 
 func (vm *VM) Start() {
@@ -81,10 +81,10 @@ func (vm *VM) Start() {
 	//TODO: this is obviously completely wrong
 	for _, c := range vm.classes {
 		if c.hasMethodCalled("main") {
-			vm.activeMethod = c.resolveMethod("main")
+			vm.activeMethod = c.resolveMethod("main", "([Ljava/lang/String;)V")
 		}
 	}
-	vm.execute(vm.activeMethod.class.Name(), "main", &frame, false, false)
+	vm.execute(vm.activeMethod.class.Name(), vm.activeMethod.Name(), vm.activeMethod.RawSigniture, &frame, false, false)
 }
 
 func nativePrintString(f *Frame, w io.Writer) {
@@ -174,27 +174,27 @@ func newFrame(previousFrame *Frame, method *Method, args []javaValue) Frame {
 	return frame
 }
 
-func buildFrame(vm *VM, className, methodName string, previousFrame *Frame, virtual bool) *Frame {
+func buildFrame(vm *VM, className, methodName, descriptor string, previousFrame *Frame, virtual bool) *Frame {
 	class := vm.resolveClass(className)
-	if !class.hasMethodCalled(methodName) {
-		return buildFrame(vm, class.getSuperName(), methodName, previousFrame, false)
+	method := class.resolveMethod(methodName, descriptor)
+	if method == nil {
+		return buildFrame(vm, class.getSuperName(), methodName, descriptor, previousFrame, false)
 	}
-	method := class.resolveMethod(methodName)
 	args := collectArgs(method, previousFrame)
 	if virtual {
 		o := args[0].(javaObject)
 		for _, v := range args {
 			previousFrame.push(v)
 		}
-		return buildFrame(vm, o.className, methodName, previousFrame, false)
+		return buildFrame(vm, o.className, methodName, descriptor, previousFrame, false)
 	}
 
 	frame := newFrame(previousFrame, method, args)
 	return &frame
 }
 
-func (vm *VM) execute(className string, methodName string, previousFrame *Frame, virtual bool, run bool) {
-	vm.frame = buildFrame(vm, className, methodName, previousFrame, virtual)
+func (vm *VM) execute(className, methodName, descriptor string, previousFrame *Frame, virtual bool, run bool) {
+	vm.frame = buildFrame(vm, className, methodName, descriptor, previousFrame, virtual)
 
 	if run {
 		for !vm.frame.Root {
@@ -223,6 +223,8 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 	op := frame.PC.next()
 	switch op.name {
 	case "nop":
+	case "aconst_null":
+		frame.push(javaObject{isNull: true})
 	case "iconst_0":
 		frame.pushInt32(0)
 	case "iconst_1":
@@ -401,16 +403,16 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		obj.setField(fieldRef.fieldName(), f)
 	case "invokevirtual":
 		methodRef := frame.Class.getMethodRefAt(op.uint16())
-		return buildFrame(vm, methodRef.className(), methodRef.methodName(), frame, true)
+		return buildFrame(vm, methodRef.className(), methodRef.methodName(), methodRef.methodType(), frame, true)
 	case "invokespecial":
 		methodRef := frame.Class.getMethodRefAt(op.uint16())
-		return buildFrame(vm, methodRef.className(), methodRef.methodName(), frame, false)
+		return buildFrame(vm, methodRef.className(), methodRef.methodName(), methodRef.methodType(), frame, false)
 	case "invokestatic":
 		methodRef := frame.Class.getMethodRefAt(op.uint16())
-		return buildFrame(vm, methodRef.className(), methodRef.methodName(), frame, false)
+		return buildFrame(vm, methodRef.className(), methodRef.methodName(), methodRef.methodType(), frame, false)
 	case "invokeinterface":
 		methodRef := frame.Class.getInterfaceMethodRefAt(op.uint16())
-		return buildFrame(vm, methodRef.className(), methodRef.methodName(), frame, true)
+		return buildFrame(vm, methodRef.className(), methodRef.methodName(), methodRef.methodType(), frame, true)
 	case "new":
 		classInfo := frame.Class.getClassInfoAt(op.uint16())
 		c := vm.resolveClass(classInfo.className())
@@ -426,6 +428,16 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 	case "arraylength":
 		a := frame.popArray()
 		frame.pushInt32(int32(len(a)))
+	case "ifnull":
+		o := frame.popObject()
+		if o.isNull {
+			frame.PC.jump(int(op.int16()))
+		}
+	case "ifnonnull":
+		o := frame.popObject()
+		if !o.isNull {
+			frame.PC.jump(int(op.int16()))
+		}
 	default:
 		panic(fmt.Sprintf("Cannot execute instruction: %v", op))
 	}
@@ -433,7 +445,7 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 }
 
 func newInstance(c *Class) javaObject {
-	return javaObject{c.Name(), make(map[string]javaValue)}
+	return javaObject{className: c.Name(), fields: make(map[string]javaValue)}
 }
 
 func (vm *VM) initClass(c *Class, frame *Frame) {
@@ -441,7 +453,7 @@ func (vm *VM) initClass(c *Class, frame *Frame) {
 		return
 	}
 	c.initialised = true
-	vm.frame = buildFrame(vm, c.Name(), "<clinit>", frame, false)
+	vm.frame = buildFrame(vm, c.Name(), "<clinit>", "()V", frame, false)
 	for vm.frame != frame {
 		vm.Step()
 	}
@@ -544,6 +556,7 @@ func (s *stack) popArray() javaArray {
 }
 
 type javaObject struct {
+	isNull    bool
 	className string
 	fields    map[string]javaValue
 }
