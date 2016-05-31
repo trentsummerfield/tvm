@@ -18,7 +18,7 @@ for test in tests/*; do
 	javac -bootclasspath stdlib:$RT -d $DIR $test/*.java || (echo "Failed to compile"; exit 1)
 	find stdlib -type f -name '*.java' | xargs javac -d $DIR || (echo "Failed to compile"; exit 1)
 	find stdlib -type f -name '*.class' | xargs -I{} -n1 cp {} $DIR/
-	diff <(find $DIR -type f | xargs tvm -batch) $test/out
+	diff <(find $DIR -type f | xargs tvm) $test/out
 	if [[ $? -eq 0 ]]; then
 		echo -e "\033[32mPASS\033[0m"
 	else

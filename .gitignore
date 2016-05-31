@@ -28,3 +28,7 @@ tvm
 rt.jar
 debug
 .vscode/
+.DS_Store
+swap.py
+run
+*.class.std

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	termbox "github.com/nsf/termbox-go"
-	"github.com/trentsummerfield/tvm/java"
+	"github.com/trentsummerfield/tvm"
 )
 
 func drawString(x, y int, s string, color ...termbox.Attribute) {
