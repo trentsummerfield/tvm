@@ -10,7 +10,7 @@ public class StringBuilder {
     }
 
     public StringBuilder append(String s) {
-        int l = s.data.length;
+        int l = s.value.length;
         while (size + l > data.length) {
             char[] expandedData = new char[data.length * 2];
             for (int i = 0; i < size; i++) {
@@ -19,7 +19,7 @@ public class StringBuilder {
             data = expandedData;
         }
         for (int i = 0; i < l; i++) {
-            data[i+size] = s.data[i];
+            data[i+size] = s.value[i];
         }
         size += l;
         return this;

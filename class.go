@@ -37,10 +37,10 @@ type Code struct {
 
 type Class struct {
 	magic             uint32
-	minorVersion      uint16
-	majorVersion      uint16
+	MinorVersion      uint16
+	MajorVersion      uint16
 	ConstantPoolItems []ConstantPoolItem
-	accessFlags       accessFlags
+	AccessFlags       accessFlags
 	thisClass         uint16
 	superClass        uint16
 	interfaces        []uint16
@@ -117,6 +117,7 @@ func parseConstantPool(c *Class, cr classDecoder, constantPoolCount uint16) []Co
 			items[i] = parseFloatConstant(c, cr)
 		case 5:
 			items[i] = parseLongConstant(c, cr)
+			items[i+1] = LongConstantPart2{}
 			i++
 		case 7:
 			items[i] = parseClassInfo(c, cr)
@@ -137,17 +138,17 @@ func parseConstantPool(c *Class, cr classDecoder, constantPoolCount uint16) []Co
 	return items
 }
 
-func parseClass(r io.Reader) (c Class, err error) {
+func ParseClass(r io.Reader) (c Class, err error) {
 	cr := newClassDecoder(r)
-	_ = cr.u2() // minor version
-	_ = cr.u2() // major version
+	c.MinorVersion = cr.u2() // minor version
+	c.MajorVersion = cr.u2() // major version
 	cpc := cr.u2()
 	constantPoolCount := cpc - 1
 	if cpc != 0 {
 		c.ConstantPoolItems = parseConstantPool(&c, cr, constantPoolCount)
 	}
 
-	c.accessFlags = accessFlags(cr.u2())
+	c.AccessFlags = accessFlags(cr.u2())
 	c.thisClass = cr.u2()
 	c.superClass = cr.u2()
 
@@ -330,6 +331,12 @@ func (m fieldRef) fieldName() string {
 	nt := m.containingClass.ConstantPoolItems[m.nameAndTypeIndex-1].(nameAndType)
 	n := m.containingClass.ConstantPoolItems[nt.nameIndex-1].(utf8String).contents
 	return n
+}
+
+func (m fieldRef) fieldDescriptor() string {
+	nt := m.containingClass.ConstantPoolItems[m.nameAndTypeIndex-1].(nameAndType)
+	t := m.containingClass.ConstantPoolItems[nt.descriptorIndex-1].(utf8String).contents
+	return t
 }
 
 func (m fieldRef) className() string {
@@ -534,6 +541,15 @@ func (_ longConstant) isConstantPoolItem() {}
 
 func (l longConstant) String() string {
 	return fmt.Sprintf("(Long) %d", l.value)
+}
+
+type LongConstantPart2 struct {
+}
+
+func (_ LongConstantPart2) isConstantPoolItem() {}
+
+func (l LongConstantPart2) String() string {
+	return fmt.Sprintf("(Long Part 2)")
 }
 
 func parseLongConstant(c *Class, cr classDecoder) ConstantPoolItem {

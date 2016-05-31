@@ -51,7 +51,7 @@ func (vm *VM) ActiveFrame() *Frame {
 
 func (vm *VM) LoadClass(path string) {
 	file, _ := os.Open(path)
-	class, err := parseClass(file)
+	class, err := ParseClass(file)
 	if err != nil {
 		log.Panicf("unable to load %s: %v", path, err)
 	}
@@ -93,7 +93,7 @@ func nativePrintString(f *Frame, w io.Writer) {
 	default:
 		fmt.Printf("unexpected type %T", str)
 	case javaObject:
-		f := str.getField("data").(javaArray)
+		f := str.getField("value", "[c").(javaArray)
 		bytes := make([]byte, len(f))
 		for i, b := range f {
 			bytes[i] = byte(b.(javaByte))
@@ -256,7 +256,7 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 			for i, _ := range arr {
 				arr[i] = javaByte(s.contents[i])
 			}
-			ref.fields["data"] = javaArray(arr)
+			ref.fields["value"] = javaArray(arr)
 			frame.push(ref)
 		default:
 			log.Fatalf("Cannot load unknown constant %v", constant)
@@ -363,6 +363,16 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		if c != 0 {
 			frame.PC.jump(int(op.int16()))
 		}
+	case "ifge":
+		c := frame.popInt32()
+		if c >= 0 {
+			frame.PC.jump(int(op.int16()))
+		}
+	case "ifle":
+		c := frame.popInt32()
+		if c <= 0 {
+			frame.PC.jump(int(op.int16()))
+		}
 	case "if_icmpge":
 		v2 := frame.popInt32()
 		v1 := frame.popInt32()
@@ -396,7 +406,7 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 	case "getfield":
 		fieldRef := frame.Class.getFieldRefAt(op.uint16())
 		obj := frame.popObject()
-		f := obj.getField(fieldRef.fieldName())
+		f := obj.getField(fieldRef.fieldName(), fieldRef.fieldDescriptor())
 		frame.push(f)
 	case "putfield":
 		fieldRef := frame.Class.getFieldRefAt(op.uint16())
@@ -563,10 +573,15 @@ type javaObject struct {
 	fields    map[string]javaValue
 }
 
-func (o *javaObject) getField(name string) javaValue {
+func (o *javaObject) getField(name, descriptor string) javaValue {
 	_, ok := o.fields[name]
 	if !ok {
-		o.fields[name] = javaInt(0)
+		switch descriptor {
+		case "I", "Z":
+			o.fields[name] = javaInt(0)
+		default:
+			log.Fatalf("I don't know how to initialize field %v with type %v\n", name, descriptor)
+		}
 	}
 	return o.fields[name]
 }

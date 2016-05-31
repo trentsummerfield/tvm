@@ -154,6 +154,10 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "iinc", bytes[1:3]}
 	case 154:
 		return OpCode{b, "ifne", bytes[1:3]}
+	case 156:
+		return OpCode{b, "ifge", bytes[1:3]}
+	case 158:
+		return OpCode{b, "ifle", bytes[1:3]}
 	case 162:
 		return OpCode{b, "if_icmpge", bytes[1:3]}
 	case 164:

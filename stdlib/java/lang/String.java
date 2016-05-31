@@ -1,12 +1,12 @@
 package java.lang;
 
 public class String {
-    public char[] data;
+    public char[] value;
 
     public String(char[] characters, int length) {
-        data = new char[length];
+        value = new char[length];
         for (int i = 0; i < length; i++) {
-            data[i] = characters[i];
+            value[i] = characters[i];
         }
     }
 }
