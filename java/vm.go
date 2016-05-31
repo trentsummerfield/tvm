@@ -295,6 +295,8 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		a := frame.popArray()
 		c := byte(a[int(i)].(javaByte))
 		frame.pushInt32(int32(c))
+	case "pop":
+		frame.pop()
 	case "dup":
 		tmp := frame.pop()
 		frame.push(tmp)

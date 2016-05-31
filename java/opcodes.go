@@ -122,6 +122,8 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "astore_3", nil}
 	case 85:
 		return OpCode{b, "castore", nil}
+	case 87:
+		return OpCode{b, "pop", nil}
 	case 89:
 		return OpCode{b, "dup", nil}
 	case 96:

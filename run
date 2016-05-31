@@ -12,4 +12,5 @@ NAME=`cut -d'/' -f2 <<<"$test"`
 DIR=`mktemp -d -t tvm-tests-XXXXXXX` || (echo "Failed to create tmp directory"; exit 1)
 javac -bootclasspath stdlib:$RT -d $DIR $test/*.java || (echo "Failed to compile"; exit 1)
 find stdlib -type f -name '*.java' | xargs javac -d $DIR || (echo "Failed to compile"; exit 1)
+find stdlib -type f -name '*.class' | xargs -I{} -n1 cp {} $DIR/
 find $DIR -type f | xargs go run main.go
