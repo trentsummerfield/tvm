@@ -76,6 +76,8 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "ldc2_w", bytes[1:3]}
 	case 21:
 		return OpCode{b, "iload", bytes[1:2]}
+	case 25:
+		return OpCode{b, "aload", bytes[1:2]}
 	case 26:
 		return OpCode{b, "iload_0", nil}
 	case 27:
@@ -108,6 +110,8 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "caload", nil}
 	case 54:
 		return OpCode{b, "istore", bytes[1:2]}
+	case 58:
+		return OpCode{b, "astore", bytes[1:2]}
 	case 60:
 		return OpCode{b, "istore_1", nil}
 	case 61:
@@ -156,10 +160,14 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "ifne", bytes[1:3]}
 	case 156:
 		return OpCode{b, "ifge", bytes[1:3]}
+	case 157:
+		return OpCode{b, "ifgt", bytes[1:3]}
 	case 158:
 		return OpCode{b, "ifle", bytes[1:3]}
 	case 162:
 		return OpCode{b, "if_icmpge", bytes[1:3]}
+	case 163:
+		return OpCode{b, "if_icmpgt", bytes[1:3]}
 	case 164:
 		return OpCode{b, "if_icmple", bytes[1:3]}
 	case 167:
@@ -196,6 +204,8 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "newarray", bytes[1:2]}
 	case 190:
 		return OpCode{b, "arraylength", nil}
+	case 191:
+		return OpCode{b, "athrow", nil}
 	case 198:
 		return OpCode{b, "ifnull", bytes[1:3]}
 	case 199:

@@ -1,8 +1,8 @@
 package main
 
 import (
-	"flag"
 	"fmt"
+	"os"
 	"strings"
 
 	termbox "github.com/nsf/termbox-go"
@@ -91,24 +91,32 @@ func drawFrame(x, y int, frame *java.Frame) int {
 	y++
 	if frame.PC != nil {
 		drawString(x, y, "Byte Code Stream")
+		offset := 1
 		for i, b := range frame.PC.RawByteCodes {
 			fg := termbox.ColorDefault
 			if i == frame.PC.RawByteCodeIndex {
 				fg = termbox.ColorRed
+			} else if offset == 1 {
+				continue
 			}
-			drawString(x, y+i+1, fmt.Sprintf("%d", b), fg)
+			drawString(x, y+offset, fmt.Sprintf("%d", b), fg)
+			offset++
 		}
 
 		yoffset := 0
 		xoffset := 20
+		offset = 1
 		drawString(x+xoffset, y, "Parsed Code Stream")
 		for i, b := range frame.PC.OpCodes {
 			fg := termbox.ColorDefault
 			if i == frame.PC.OpCodeIndex {
 				fg = termbox.ColorRed
+			} else if offset == 1 {
+				continue
 			}
-			drawString(x+xoffset, y+i+1+yoffset, b.Name(), fg)
+			drawString(x+xoffset, y+offset+yoffset, b.Name(), fg)
 			yoffset += b.Width() - 1
+			offset++
 		}
 
 		yoffset = 0
@@ -155,15 +163,9 @@ type ui struct {
 }
 
 func main() {
-	batch := flag.Bool("batch", false, "Make TVM run the supplied code without visualisations")
-	flag.Parse()
 	vm := java.NewVM()
-	for _, arg := range flag.Args() {
+	for _, arg := range os.Args[1:] {
 		vm.LoadClass(arg)
-	}
-	if *batch {
-		vm.Run()
-		return
 	}
 	vm.Start()
 

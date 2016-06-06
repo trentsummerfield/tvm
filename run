@@ -13,4 +13,4 @@ javac -bootclasspath stdlib:$RT -d $DIR $test/*.java || (echo "Failed to compile
 find stdlib -type f -name '*.java' | xargs javac -d $DIR || (echo "Failed to compile"; exit 1)
 find stdlib -type f -name '*.class' | xargs -I{} -n1 cp {} $DIR/
 find $DIR -type f
-find $DIR -type f | xargs go run cmd/tvm/main.go
+find $DIR -type f | xargs go run cmd/visual-tvm/main.go

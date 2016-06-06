@@ -33,6 +33,7 @@ func NewVM() (vm VM) {
 		"printLong":  nativePrintLong,
 		"printFloat": nativePrintFloat,
 		"printChar":  nativePrintChar,
+		"arraycopy":  nativeArrayCopy,
 	}
 	return vm
 }
@@ -127,6 +128,23 @@ func nativePrintChar(f *Frame, w io.Writer) {
 	return
 }
 
+func nativeArrayCopy(f *Frame, w io.Writer) {
+	/*
+		Object src,  int  srcPos, Object dest, int destPos, int length
+	*/
+	src := f.variables[0].(javaArray).unbox()
+	i := f.variables[1].(javaInt).unbox()
+	dst := f.variables[2].(javaArray).unbox()
+	j := f.variables[3].(javaInt).unbox()
+	k := f.variables[4].(javaInt).unbox()
+
+	for l := int32(0); l < k; l++ {
+		dst[j+l] = src[i+l]
+	}
+
+	return
+}
+
 func (vm *VM) resolveClass(name string) *Class {
 	for _, class := range vm.classes {
 		// TODO: handle packages correctly
@@ -178,6 +196,9 @@ func buildFrame(vm *VM, className, methodName, descriptor string, previousFrame 
 	class := vm.resolveClass(className)
 	method := class.resolveMethod(methodName, descriptor)
 	if method == nil {
+		if className == "java/lang/Object" {
+			log.Fatalf("Unable to find method %s\n", methodName)
+		}
 		return buildFrame(vm, class.getSuperName(), methodName, descriptor, previousFrame, false)
 	}
 	args := collectArgs(method, previousFrame)
@@ -252,11 +273,13 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 			s := frame.Class.getStringAt(int(index - 1))
 			c := vm.resolveClass("java/lang/String")
 			ref := newInstance(c)
-			arr := make([]javaValue, len(s.contents))
+			arrLen := len(s.contents)
+			arr := make([]javaValue, arrLen)
 			for i, _ := range arr {
 				arr[i] = javaByte(s.contents[i])
 			}
 			ref.fields["value"] = javaArray(arr)
+			ref.fields["count"] = javaInt(arrLen)
 			frame.push(ref)
 		default:
 			log.Fatalf("Cannot load unknown constant %v", constant)
@@ -265,7 +288,7 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		index := op.int16()
 		l := frame.Class.getLongAt(int(index - 1))
 		frame.pushInt64(l.value)
-	case "iload":
+	case "iload", "aload":
 		index := op.int8()
 		frame.push(frame.variables[index])
 	case "iload_0", "aload_0", "lload_0", "fload_0":
@@ -276,7 +299,7 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		frame.push(frame.variables[2])
 	case "iload_3", "aload_3", "lload_3":
 		frame.push(frame.variables[3])
-	case "istore":
+	case "istore", "astore":
 		index := op.int8()
 		frame.variables[index] = frame.pop()
 	case "istore_1", "astore_1":
@@ -368,6 +391,11 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		if c >= 0 {
 			frame.PC.jump(int(op.int16()))
 		}
+	case "ifgt":
+		c := frame.popInt32()
+		if c > 0 {
+			frame.PC.jump(int(op.int16()))
+		}
 	case "ifle":
 		c := frame.popInt32()
 		if c <= 0 {
@@ -377,6 +405,12 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		v2 := frame.popInt32()
 		v1 := frame.popInt32()
 		if v1 >= v2 {
+			frame.PC.jump(int(op.int16()))
+		}
+	case "if_icmpgt":
+		v2 := frame.popInt32()
+		v1 := frame.popInt32()
+		if v1 > v2 {
 			frame.PC.jump(int(op.int16()))
 		}
 	case "if_icmple":
@@ -440,6 +474,8 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 	case "arraylength":
 		a := frame.popArray()
 		frame.pushInt32(int32(len(a)))
+	case "athrow":
+		log.Fatal("TVM doesn't know how to throw exceptions yet :(")
 	case "ifnull":
 		o := frame.popObject()
 		if o.isNull {
@@ -561,6 +597,10 @@ func (_ javaArray) isJavaValue() {}
 
 func (s *stack) pushArray(a javaArray) {
 	s.push(javaArray(a))
+}
+
+func (a javaArray) unbox() []javaValue {
+	return []javaValue(a)
 }
 
 func (s *stack) popArray() javaArray {
