@@ -68,6 +68,15 @@ type classDecoder struct {
 	err    error
 }
 
+func (r classDecoder) u8() uint64 {
+	if r.err != nil {
+		return 0
+	}
+	var x uint64
+	r.err = binary.Read(r.reader, binary.BigEndian, &x)
+	return x
+}
+
 func (r classDecoder) u4() uint32 {
 	if r.err != nil {
 		return 0
@@ -117,7 +126,11 @@ func parseConstantPool(c *Class, cr classDecoder, constantPoolCount uint16) []Co
 			items[i] = parseFloatConstant(c, cr)
 		case 5:
 			items[i] = parseLongConstant(c, cr)
-			items[i+1] = LongConstantPart2{}
+			items[i+1] = WideConstantPart2{}
+			i++
+		case 6:
+			items[i] = parseDoubleConstant(c, cr)
+			items[i+1] = WideConstantPart2{}
 			i++
 		case 7:
 			items[i] = parseClassInfo(c, cr)
@@ -131,6 +144,12 @@ func parseConstantPool(c *Class, cr classDecoder, constantPoolCount uint16) []Co
 			items[i] = parseInterfaceMethodRef(c, cr)
 		case 12:
 			items[i] = parseNameAndType(c, cr)
+		case 15:
+			items[i] = parseMethodHandle(c, cr)
+		case 16:
+			items[i] = parseMethodType(c, cr)
+		case 18:
+			items[i] = parseInvokeDynamic(c, cr)
 		default:
 			log.Fatalf("Unknown tag %d\n", tag)
 		}
@@ -397,6 +416,50 @@ func parseSigniture(sig string) []string {
 	return s
 }
 
+type methodType struct {
+	descriptorIndex uint16
+}
+
+func (_ methodType) isConstantPoolItem() {}
+
+func (n methodType) String() string {
+	return fmt.Sprintf("(MethodType)")
+}
+
+func parseMethodType(c *Class, cr classDecoder) ConstantPoolItem {
+	return methodType{cr.u2()}
+}
+
+type methodHandle struct {
+	referenceKind  uint8
+	referenceIndex uint16
+}
+
+func (_ methodHandle) isConstantPoolItem() {}
+
+func (n methodHandle) String() string {
+	return fmt.Sprintf("(MethodHandle)")
+}
+
+func parseMethodHandle(c *Class, cr classDecoder) ConstantPoolItem {
+	return methodHandle{cr.u1(), cr.u2()}
+}
+
+type invokeDynamic struct {
+	bootstrapMethodAttrIndex uint16
+	nameAndTypeIndex         uint16
+}
+
+func (_ invokeDynamic) isConstantPoolItem() {}
+
+func (n invokeDynamic) String() string {
+	return fmt.Sprintf("(InvokeDynamic) bootstrapMethodAttrIndex: %d, nameAndType: %d", n.bootstrapMethodAttrIndex, n.nameAndTypeIndex)
+}
+
+func parseInvokeDynamic(c *Class, cr classDecoder) ConstantPoolItem {
+	return invokeDynamic{cr.u2(), cr.u2()}
+}
+
 type nameAndType struct {
 	nameIndex       uint16
 	descriptorIndex uint16
@@ -543,19 +606,19 @@ func (l longConstant) String() string {
 	return fmt.Sprintf("(Long) %d", l.value)
 }
 
-type LongConstantPart2 struct {
-}
-
-func (_ LongConstantPart2) isConstantPoolItem() {}
-
-func (l LongConstantPart2) String() string {
-	return fmt.Sprintf("(Long Part 2)")
-}
-
 func parseLongConstant(c *Class, cr classDecoder) ConstantPoolItem {
 	long := int64(cr.u4()) << 32
 	long += int64(cr.u4())
 	return longConstant{long}
+}
+
+type WideConstantPart2 struct {
+}
+
+func (_ WideConstantPart2) isConstantPoolItem() {}
+
+func (l WideConstantPart2) String() string {
+	return fmt.Sprintf("(Long Part 2)")
 }
 
 type floatConstant struct {
@@ -571,6 +634,21 @@ func (f floatConstant) String() string {
 func parseFloatConstant(c *Class, cr classDecoder) ConstantPoolItem {
 	bits := cr.u4()
 	return floatConstant{math.Float32frombits(bits)}
+}
+
+type doubleConstant struct {
+	value float64
+}
+
+func (_ doubleConstant) isConstantPoolItem() {}
+
+func (f doubleConstant) String() string {
+	return fmt.Sprintf("(Double) %v", f.value)
+}
+
+func parseDoubleConstant(c *Class, cr classDecoder) ConstantPoolItem {
+	bits := cr.u8()
+	return doubleConstant{math.Float64frombits(bits)}
 }
 
 type field struct {

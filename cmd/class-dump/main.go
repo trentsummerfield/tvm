@@ -30,7 +30,7 @@ func main() {
 
 	fmt.Printf("Constant pool:\n")
 	for i, cp := range class.ConstantPoolItems {
-		_, ok := cp.(tvm.LongConstantPart2)
+		_, ok := cp.(tvm.WideConstantPart2)
 		if ok {
 			continue
 		}

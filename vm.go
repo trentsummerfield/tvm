@@ -6,10 +6,12 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 )
 
 type VM struct {
 	classes       []*Class
+	dirs          []string
 	activeMethod  *Method
 	nativeMethods map[string](func(*Frame, io.Writer))
 	frame         *Frame
@@ -50,13 +52,19 @@ func (vm *VM) ActiveFrame() *Frame {
 	return vm.frame
 }
 
-func (vm *VM) LoadClass(path string) {
+func (vm *VM) AddDirectory(dir string) {
+	vm.dirs = append(vm.dirs, dir)
+}
+
+func (vm *VM) LoadClass(path string) error {
 	file, _ := os.Open(path)
+	defer file.Close()
 	class, err := ParseClass(file)
 	if err != nil {
-		log.Panicf("unable to load %s: %v", path, err)
+		return err
 	}
 	vm.classes = append(vm.classes, &class)
+	return nil
 }
 
 func (vm *VM) Run() {
@@ -146,14 +154,32 @@ func nativeArrayCopy(f *Frame, w io.Writer) {
 }
 
 func (vm *VM) resolveClass(name string) *Class {
+	class := vm.getClass(name)
+	if class != nil {
+		return class
+	}
+	for _, d := range vm.dirs {
+		err := vm.LoadClass(filepath.Join(d, name) + ".class")
+		if err != nil {
+			continue
+		}
+	}
+	class = vm.getClass(name)
+	if class != nil {
+		return class
+	}
+	//TODO: raise the appropriate java exception
+	log.Panicf("Could not resolve class %s\n", name)
+	return nil
+}
+
+func (vm *VM) getClass(name string) *Class {
 	for _, class := range vm.classes {
 		// TODO: handle packages correctly
 		if class.Name() == name {
 			return class
 		}
 	}
-	//TODO: raise the appropriate java exception
-	log.Panicf("Could not resolve class %s\n", name)
 	return nil
 }
 
