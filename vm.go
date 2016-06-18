@@ -30,12 +30,13 @@ type Frame struct {
 
 func NewVM() (vm VM) {
 	vm.nativeMethods = map[string](func(*Frame, io.Writer)){
-		"print":      nativePrintString,
-		"printInt":   nativePrintInteger,
-		"printLong":  nativePrintLong,
-		"printFloat": nativePrintFloat,
-		"printChar":  nativePrintChar,
-		"arraycopy":  nativeArrayCopy,
+		"print":                   nativePrintString,
+		"printInt":                nativePrintInteger,
+		"printLong":               nativePrintLong,
+		"printFloat":              nativePrintFloat,
+		"printChar":               nativePrintChar,
+		"arraycopy":               nativeArrayCopy,
+		"desiredAssertionStatus0": nativeDesiredAssertionStatus,
 	}
 	return vm
 }
@@ -150,6 +151,11 @@ func nativeArrayCopy(f *Frame, w io.Writer) {
 		dst[j+l] = src[i+l]
 	}
 
+	return
+}
+
+func nativeDesiredAssertionStatus(f *Frame, w io.Writer) {
+	f.PreviousFrame.pushInt32(0)
 	return
 }
 
@@ -286,6 +292,8 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		frame.pushInt32(5)
 	case "fconst_2":
 		frame.pushFloat32(2.0)
+	case "dconst_1":
+		frame.pushFloat64(1.0)
 	case "bipush":
 		frame.pushInt32(int32(op.int8()))
 	case "ldc":
@@ -306,6 +314,10 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 			}
 			ref.fields["value"] = javaArray(arr)
 			ref.fields["count"] = javaInt(arrLen)
+			frame.push(ref)
+		case classInfo:
+			c := vm.resolveClass("java/lang/Class")
+			ref := newInstance(c)
 			frame.push(ref)
 		default:
 			log.Fatalf("Cannot load unknown constant %v", constant)
@@ -350,6 +362,12 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		tmp := frame.pop()
 		frame.push(tmp)
 		frame.push(tmp)
+	case "dup_x1":
+		tmp1 := frame.pop()
+		tmp2 := frame.pop()
+		frame.push(tmp1)
+		frame.push(tmp2)
+		frame.push(tmp1)
 	case "iadd":
 		//TODO: make sure we do overflow correctly
 		x := frame.popInt32()
@@ -407,6 +425,11 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		x := frame.popFloat32()
 		y := frame.popFloat32()
 		frame.pushFloat32(y / x)
+	case "ifeq":
+		c := frame.popInt32()
+		if c == 0 {
+			frame.PC.jump(int(op.int16()))
+		}
 	case "ifne":
 		c := frame.popInt32()
 		if c != 0 {
@@ -425,6 +448,12 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 	case "ifle":
 		c := frame.popInt32()
 		if c <= 0 {
+			frame.PC.jump(int(op.int16()))
+		}
+	case "if_icmpne":
+		v2 := frame.popInt32()
+		v1 := frame.popInt32()
+		if v1 != v2 {
 			frame.PC.jump(int(op.int16()))
 		}
 	case "if_icmpge":
@@ -497,11 +526,32 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 			arr[i] = javaByte(67)
 		}
 		frame.pushArray(arr)
+	case "anewarray":
+		count := frame.popInt32()
+		arr := make([]javaValue, count)
+		for i, _ := range arr {
+			//TODO: set the class correctly
+			arr[i] = javaObject{isNull: true}
+		}
+		frame.pushArray(arr)
 	case "arraylength":
 		a := frame.popArray()
 		frame.pushInt32(int32(len(a)))
 	case "athrow":
 		log.Fatal("TVM doesn't know how to throw exceptions yet :(")
+	case "instanceof":
+		classInfo := frame.Class.getClassInfoAt(op.uint16())
+		c := vm.resolveClass(classInfo.className())
+		o := frame.popObject()
+		if implements(o, c) {
+			frame.pushInt32(1)
+		} else {
+			frame.pushInt32(0)
+		}
+	case "monitorenter":
+		//TODO: implement when we get to threading
+	case "monitorexit":
+		//TODO: implement when we get to threading
 	case "ifnull":
 		o := frame.popObject()
 		if o.isNull {
@@ -516,6 +566,13 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		panic(fmt.Sprintf("Cannot execute instruction: %v", op))
 	}
 	return frame
+}
+
+func implements(o javaObject, c *Class) bool {
+	if o.isNull {
+		return false
+	}
+	return o.className == c.Name()
 }
 
 func newInstance(c *Class) javaObject {
@@ -605,6 +662,22 @@ func (f javaFloat) unbox() float32 {
 	return float32(f)
 }
 
+type javaDouble float64
+
+func (_ javaDouble) isJavaValue() {}
+
+func (s *stack) pushFloat64(f float64) {
+	s.push(javaDouble(f))
+}
+
+func (s *stack) popFloat64() float64 {
+	return float64(s.pop().(javaDouble))
+}
+
+func (f javaDouble) unbox() float64 {
+	return float64(f)
+}
+
 type javaByte byte
 
 func (_ javaByte) isJavaValue() {}
@@ -642,14 +715,17 @@ type javaObject struct {
 func (o *javaObject) getField(name, descriptor string) javaValue {
 	_, ok := o.fields[name]
 	if !ok {
-		switch descriptor {
-		case "I", "Z":
+		switch descriptor[0] {
+		case 'I', 'Z':
 			o.fields[name] = javaInt(0)
+		case 'L':
+			o.fields[name] = javaObject{isNull: true}
 		default:
 			log.Fatalf("I don't know how to initialize field %v with type %v\n", name, descriptor)
 		}
 	}
-	return o.fields[name]
+	result := o.fields[name]
+	return result
 }
 
 func (o *javaObject) setField(name string, f javaValue) {

@@ -68,6 +68,8 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "iconst_5", nil}
 	case 13:
 		return OpCode{b, "fconst_2", nil}
+	case 15:
+		return OpCode{b, "dconst_1", nil}
 	case 16:
 		return OpCode{b, "bipush", bytes[1:2]}
 	case 18:
@@ -130,6 +132,8 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "pop", nil}
 	case 89:
 		return OpCode{b, "dup", nil}
+	case 90:
+		return OpCode{b, "dup_x1", nil}
 	case 96:
 		return OpCode{b, "iadd", nil}
 	case 97:
@@ -156,6 +160,8 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "fdiv", nil}
 	case 132:
 		return OpCode{b, "iinc", bytes[1:3]}
+	case 153:
+		return OpCode{b, "ifeq", bytes[1:3]}
 	case 154:
 		return OpCode{b, "ifne", bytes[1:3]}
 	case 156:
@@ -164,6 +170,8 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "ifgt", bytes[1:3]}
 	case 158:
 		return OpCode{b, "ifle", bytes[1:3]}
+	case 160:
+		return OpCode{b, "if_icmpne", bytes[1:3]}
 	case 162:
 		return OpCode{b, "if_icmpge", bytes[1:3]}
 	case 163:
@@ -202,10 +210,18 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "new", bytes[1:3]}
 	case 188:
 		return OpCode{b, "newarray", bytes[1:2]}
+	case 189:
+		return OpCode{b, "anewarray", bytes[1:4]}
 	case 190:
 		return OpCode{b, "arraylength", nil}
 	case 191:
 		return OpCode{b, "athrow", nil}
+	case 193:
+		return OpCode{b, "instanceof", bytes[1:3]}
+	case 194:
+		return OpCode{b, "monitorenter", nil}
+	case 195:
+		return OpCode{b, "monitorexit", nil}
 	case 198:
 		return OpCode{b, "ifnull", bytes[1:3]}
 	case 199:
