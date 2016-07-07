@@ -7,7 +7,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+var debug = true
 
 type VM struct {
 	classes       []*Class
@@ -37,6 +40,7 @@ func NewVM() (vm VM) {
 		"printChar":               nativePrintChar,
 		"arraycopy":               nativeArrayCopy,
 		"desiredAssertionStatus0": nativeDesiredAssertionStatus,
+		"fillInStackTrace":        nativeFillInStackTrace,
 	}
 	return vm
 }
@@ -104,8 +108,8 @@ func nativePrintString(f *Frame, w io.Writer) {
 		fmt.Printf("unexpected type %T", str)
 	case javaObject:
 		f := str.getField("value", "[c").(javaArray)
-		bytes := make([]byte, len(f))
-		for i, b := range f {
+		bytes := make([]byte, len(f.contents))
+		for i, b := range f.contents {
 			bytes[i] = byte(b.(javaByte))
 		}
 		fmt.Fprint(w, string(bytes))
@@ -138,12 +142,10 @@ func nativePrintChar(f *Frame, w io.Writer) {
 }
 
 func nativeArrayCopy(f *Frame, w io.Writer) {
-	/*
-		Object src,  int  srcPos, Object dest, int destPos, int length
-	*/
-	src := f.variables[0].(javaArray).unbox()
+	// (Object src,  int  srcPos, Object dest, int destPos, int length)
+	src := f.variables[0].(javaArray).contents
 	i := f.variables[1].(javaInt).unbox()
-	dst := f.variables[2].(javaArray).unbox()
+	dst := f.variables[2].(javaArray).contents
 	j := f.variables[3].(javaInt).unbox()
 	k := f.variables[4].(javaInt).unbox()
 
@@ -159,7 +161,20 @@ func nativeDesiredAssertionStatus(f *Frame, w io.Writer) {
 	return
 }
 
+func nativeFillInStackTrace(f *Frame, w io.Writer) {
+	// (Throwable t, int unused)
+	t := f.variables[0].(javaObject)
+	t.setField("stackTrace", javaArray{null: true})
+	f.PreviousFrame.push(t)
+	return
+}
+
 func (vm *VM) resolveClass(name string) *Class {
+	if strings.HasPrefix(name, "[L") {
+		l := len(name)
+		name = name[2 : l-1]
+	}
+
 	class := vm.getClass(name)
 	if class != nil {
 		return class
@@ -203,16 +218,25 @@ func collectArgs(method *Method, frame *Frame) []javaValue {
 
 func newFrame(previousFrame *Frame, method *Method, args []javaValue) Frame {
 	var frame Frame
-	if (method.accessFlags & Native) != 0 {
-		frame.variables = make([]javaValue, method.numArgs())
+	var variables int
+	if method.Native() {
+		variables = method.numArgs()
+		if !method.Static() {
+			variables += 1
+		}
 	} else {
-		frame.variables = make([]javaValue, method.Code.maxLocals)
+		variables = int(method.Code.maxLocals)
 	}
+	frame.variables = make([]javaValue, variables)
 	offset := 0
 	for i, v := range args {
 		frame.variables[i+offset] = v
 		_, isLong := v.(javaLong)
 		if isLong {
+			offset++
+		}
+		_, isDouble := v.(javaDouble)
+		if isDouble {
 			offset++
 		}
 	}
@@ -239,7 +263,7 @@ func buildFrame(vm *VM, className, methodName, descriptor string, previousFrame 
 		for _, v := range args {
 			previousFrame.push(v)
 		}
-		return buildFrame(vm, o.className, methodName, descriptor, previousFrame, false)
+		return buildFrame(vm, o.class().Name(), methodName, descriptor, previousFrame, false)
 	}
 
 	frame := newFrame(previousFrame, method, args)
@@ -277,7 +301,7 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 	switch op.name {
 	case "nop":
 	case "aconst_null":
-		frame.push(javaObject{isNull: true})
+		frame.push(javaObject{null: true})
 	case "iconst_0":
 		frame.pushInt32(0)
 	case "iconst_1":
@@ -312,7 +336,7 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 			for i, _ := range arr {
 				arr[i] = javaByte(s.contents[i])
 			}
-			ref.fields["value"] = javaArray(arr)
+			ref.fields["value"] = javaArray{contents: arr}
 			ref.fields["count"] = javaInt(arrLen)
 			frame.push(ref)
 		case classInfo:
@@ -350,11 +374,11 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		v := frame.popInt32()
 		i := frame.popInt32()
 		a := frame.popArray()
-		a[int(i)] = javaByte(v)
+		a.contents[int(i)] = javaByte(v)
 	case "caload":
 		i := frame.popInt32()
 		a := frame.popArray()
-		c := byte(a[int(i)].(javaByte))
+		c := byte(a.contents[int(i)].(javaByte))
 		frame.pushInt32(int32(c))
 	case "pop":
 		frame.pop()
@@ -525,25 +549,27 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		for i, _ := range arr {
 			arr[i] = javaByte(67)
 		}
-		frame.pushArray(arr)
+		frame.pushArray(javaArray{contents: arr})
 	case "anewarray":
+		classInfo := frame.Class.getClassInfoAt(op.uint16())
 		count := frame.popInt32()
 		arr := make([]javaValue, count)
 		for i, _ := range arr {
 			//TODO: set the class correctly
-			arr[i] = javaObject{isNull: true}
+			arr[i] = javaObject{null: true}
 		}
-		frame.pushArray(arr)
+		frame.pushArray(javaArray{_class: vm.resolveClass(classInfo.className()), contents: arr})
 	case "arraylength":
 		a := frame.popArray()
-		frame.pushInt32(int32(len(a)))
+		frame.pushInt32(int32(len(a.contents)))
 	case "athrow":
-		log.Fatal("TVM doesn't know how to throw exceptions yet :(")
+		return handleException(vm, frame, frame.popObject())
 	case "instanceof":
 		classInfo := frame.Class.getClassInfoAt(op.uint16())
-		c := vm.resolveClass(classInfo.className())
-		o := frame.popObject()
-		if implements(o, c) {
+		c := classInfo.className()
+		o := frame.popReference()
+		targetClass := vm.resolveClass(c)
+		if vm.implements(o.class(), targetClass) {
 			frame.pushInt32(1)
 		} else {
 			frame.pushInt32(0)
@@ -553,13 +579,13 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 	case "monitorexit":
 		//TODO: implement when we get to threading
 	case "ifnull":
-		o := frame.popObject()
-		if o.isNull {
+		o := frame.popReference()
+		if o.isNull() {
 			frame.PC.jump(int(op.int16()))
 		}
 	case "ifnonnull":
-		o := frame.popObject()
-		if !o.isNull {
+		o := frame.popReference()
+		if !o.isNull() {
 			frame.PC.jump(int(op.int16()))
 		}
 	default:
@@ -568,15 +594,44 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 	return frame
 }
 
-func implements(o javaObject, c *Class) bool {
-	if o.isNull {
-		return false
+func handleException(vm *VM, f *Frame, throwable javaObject) *Frame {
+	index := f.PC.CurrentByteCodeIndex()
+	match := false
+	for _, handler := range f.Method.Code.ExceptionHandlers {
+		if handler.CatchType == 0 || vm.implements(throwable.class(), vm.resolveClass(handler.Class)) {
+			if index >= int(handler.Start) && index < int(handler.End) {
+				f.PC.jumpTo(int(handler.Handler))
+				match = true
+				break
+			}
+		}
 	}
-	return o.className == c.Name()
+	if match {
+		f.push(throwable)
+		return f
+	} else {
+		f = f.PreviousFrame
+	}
+	return handleException(vm, f, throwable)
+}
+
+func (vm *VM) implements(child *Class, parent *Class) bool {
+	if child.Name() == parent.Name() {
+		return true
+	}
+
+	for child.Name() != "java/lang/Object" {
+		child = vm.resolveClass(child.getSuperName())
+		if child.Name() == parent.Name() {
+			return true
+		}
+	}
+
+	return false
 }
 
 func newInstance(c *Class) javaObject {
-	return javaObject{className: c.Name(), fields: make(map[string]javaValue)}
+	return javaObject{_class: c, fields: make(map[string]javaValue)}
 }
 
 func (vm *VM) initClass(c *Class, frame *Frame) {
@@ -597,6 +652,7 @@ type stack struct {
 
 type javaValue interface {
 	isJavaValue()
+	String() string
 }
 
 func (s *stack) push(e javaValue) {
@@ -618,6 +674,10 @@ type javaInt int32
 
 func (_ javaInt) isJavaValue() {}
 
+func (v javaInt) String() string {
+	return fmt.Sprintf("int(%v)", v.unbox())
+}
+
 func (s *stack) pushInt32(i int32) {
 	s.push(javaInt(i))
 }
@@ -633,6 +693,10 @@ func (i javaInt) unbox() int32 {
 type javaLong int64
 
 func (_ javaLong) isJavaValue() {}
+
+func (l javaLong) String() string {
+	return fmt.Sprintf("long(%v)", l.unbox())
+}
 
 func (s *stack) pushInt64(l int64) {
 	s.push(javaLong(l))
@@ -650,6 +714,10 @@ type javaFloat float32
 
 func (_ javaFloat) isJavaValue() {}
 
+func (f javaFloat) String() string {
+	return fmt.Sprintf("float(%v)", f.unbox())
+}
+
 func (s *stack) pushFloat32(f float32) {
 	s.push(javaFloat(f))
 }
@@ -665,6 +733,10 @@ func (f javaFloat) unbox() float32 {
 type javaDouble float64
 
 func (_ javaDouble) isJavaValue() {}
+
+func (v javaDouble) String() string {
+	return fmt.Sprintf("double(%v)", v.unbox())
+}
 
 func (s *stack) pushFloat64(f float64) {
 	s.push(javaDouble(f))
@@ -682,6 +754,10 @@ type javaByte byte
 
 func (_ javaByte) isJavaValue() {}
 
+func (v javaByte) String() string {
+	return fmt.Sprintf("byte(%v)", v.unbox())
+}
+
 func (s *stack) pushByte(i byte) {
 	s.push(javaByte(i))
 }
@@ -690,26 +766,59 @@ func (s *stack) popByte() byte {
 	return byte(s.pop().(javaByte))
 }
 
-type javaArray []javaValue
+func (b javaByte) unbox() byte {
+	return byte(b)
+}
+
+type javaReference interface {
+	isNull() bool
+	class() *Class
+}
+
+func (s *stack) popReference() javaReference {
+	return s.pop().(javaReference)
+}
+
+type javaArray struct {
+	_class   *Class
+	contents []javaValue
+	null     bool
+}
+
+func (a javaArray) isNull() bool {
+	return a.null
+}
+
+func (a javaArray) class() *Class {
+	return a._class
+}
 
 func (_ javaArray) isJavaValue() {}
+
+func (a javaArray) String() string {
+	return "Array"
+}
 
 func (s *stack) pushArray(a javaArray) {
 	s.push(javaArray(a))
 }
 
-func (a javaArray) unbox() []javaValue {
-	return []javaValue(a)
-}
-
 func (s *stack) popArray() javaArray {
-	return []javaValue(s.pop().(javaArray))
+	return s.pop().(javaArray)
 }
 
 type javaObject struct {
-	isNull    bool
-	className string
-	fields    map[string]javaValue
+	null   bool
+	_class *Class
+	fields map[string]javaValue
+}
+
+func (o javaObject) isNull() bool {
+	return o.null
+}
+
+func (o javaObject) class() *Class {
+	return o._class
 }
 
 func (o *javaObject) getField(name, descriptor string) javaValue {
@@ -719,9 +828,11 @@ func (o *javaObject) getField(name, descriptor string) javaValue {
 		case 'I', 'Z':
 			o.fields[name] = javaInt(0)
 		case 'L':
-			o.fields[name] = javaObject{isNull: true}
+			o.fields[name] = javaObject{null: true}
+		case '[':
+			o.fields[name] = javaArray{null: true}
 		default:
-			log.Fatalf("I don't know how to initialize field %v with type %v\n", name, descriptor)
+			log.Fatalf("I don't know how to initialize field %v with type %v in %v\n", name, descriptor, o.class().Name())
 		}
 	}
 	result := o.fields[name]
@@ -733,6 +844,10 @@ func (o *javaObject) setField(name string, f javaValue) {
 }
 
 func (_ javaObject) isJavaValue() {}
+
+func (o javaObject) String() string {
+	return "Object"
+}
 
 func (s *stack) popObject() javaObject {
 	return s.pop().(javaObject)

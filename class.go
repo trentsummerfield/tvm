@@ -30,9 +30,10 @@ const (
 )
 
 type Code struct {
-	maxStack     uint16
-	maxLocals    uint16
-	Instructions []byte
+	maxStack          uint16
+	maxLocals         uint16
+	Instructions      []byte
+	ExceptionHandlers []ExceptionHandler
 }
 
 type Class struct {
@@ -49,7 +50,16 @@ type Class struct {
 	initialised       bool
 }
 
-func parseCode(cr classDecoder, length uint32) (c Code) {
+type ExceptionHandler struct {
+	Start     uint16
+	End       uint16
+	Handler   uint16
+	CatchType uint16
+	Class     string
+}
+
+func parseCode(cr classDecoder, length uint32, method *Method) {
+	var c Code
 	c.maxStack = cr.u2()
 	c.maxLocals = cr.u2()
 	codeLength := cr.u4()
@@ -57,10 +67,24 @@ func parseCode(cr classDecoder, length uint32) (c Code) {
 	for k := 0; k < len(c.Instructions); k++ {
 		c.Instructions[k] = cr.u1()
 	}
-	for k := uint32(8) + codeLength; k < length; k++ {
+	numExceptionHandlers := cr.u2()
+	c.ExceptionHandlers = make([]ExceptionHandler, numExceptionHandlers)
+	for i := 0; i < len(c.ExceptionHandlers); i++ {
+		c.ExceptionHandlers[i].Start = cr.u2()
+		c.ExceptionHandlers[i].End = cr.u2()
+		c.ExceptionHandlers[i].Handler = cr.u2()
+		catchType := cr.u2()
+		if catchType != 0 {
+			c.ExceptionHandlers[i].CatchType = catchType
+			info := method.class.ConstantPoolItems[catchType-1].(classInfo)
+			name := method.class.ConstantPoolItems[info.nameIndex-1].(utf8String)
+			c.ExceptionHandlers[i].Class = name.contents
+		}
+	}
+	for k := uint32(8) + codeLength + 2 + uint32(numExceptionHandlers)*8; k < length; k++ {
 		_ = cr.u1()
 	}
-	return
+	method.Code = c
 }
 
 type classDecoder struct {
@@ -213,7 +237,7 @@ func ParseClass(r io.Reader) (c Class, err error) {
 			length := cr.u4()
 			actualName := (c.ConstantPoolItems[name-1]).(utf8String)
 			if actualName.contents == "Code" {
-				c.methods[i].Code = parseCode(cr, length)
+				parseCode(cr, length, &c.methods[i])
 			} else {
 				for k := uint32(0); k < length; k++ {
 					_ = cr.u1() // throw away bytes
@@ -674,6 +698,14 @@ func (m *Method) Name() string {
 
 func (m *Method) Class() *Class {
 	return m.class
+}
+
+func (m *Method) Static() bool {
+	return m.accessFlags&Static != 0
+}
+
+func (m *Method) Native() bool {
+	return m.accessFlags&Native != 0
 }
 
 func (m *Method) numArgs() int {

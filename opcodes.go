@@ -211,7 +211,7 @@ func bytesToOpcode(bytes []byte) OpCode {
 	case 188:
 		return OpCode{b, "newarray", bytes[1:2]}
 	case 189:
-		return OpCode{b, "anewarray", bytes[1:4]}
+		return OpCode{b, "anewarray", bytes[1:3]}
 	case 190:
 		return OpCode{b, "arraylength", nil}
 	case 191:
@@ -258,11 +258,31 @@ func (pc *ProgramCounter) OpCode() OpCode {
 	return pc.OpCodes[pc.OpCodeIndex]
 }
 
+func (pc *ProgramCounter) CurrentByteCodeIndex() int {
+	return pc.RawByteCodeIndex - pc.OpCode().Width()
+}
+
 func (pc *ProgramCounter) next() OpCode {
 	op := pc.OpCode()
 	pc.RawByteCodeIndex += op.Width()
 	pc.OpCodeIndex++
 	return op
+}
+
+func (pc *ProgramCounter) jumpTo(index int) {
+	pc.jump(index - pc.RawByteCodeIndex + pc.OpCode().Width())
+}
+
+func (pc *ProgramCounter) DebugOut() {
+	index := 0
+	for i, o := range pc.OpCodes {
+		prefix := "\t"
+		if i == pc.OpCodeIndex-1 {
+			prefix = "->\t"
+		}
+		log.Printf("%s %3d %3d %v", prefix, index, i, o)
+		index += o.Width()
+	}
 }
 
 func (pc *ProgramCounter) jump(offset int) {

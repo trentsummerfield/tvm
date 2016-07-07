@@ -125,7 +125,7 @@ func drawFrame(x, y int, frame *java.Frame) int {
 		stack := frame.Items
 		for i := len(stack) - 1; i >= 0; i-- {
 			item := stack[i]
-			drawString(x+xoffset, y+1+yoffset, fmt.Sprintf("%v", item))
+			drawString(x+xoffset, y+1+yoffset, fmt.Sprintf("%v", item.String()))
 			yoffset++
 		}
 	}
@@ -162,10 +162,27 @@ type ui struct {
 	mouse_x, mouse_y  int
 }
 
+func isDirectory(arg string) bool {
+	f, err := os.Open(arg)
+	defer f.Close()
+	if err != nil {
+		return false
+	}
+	stats, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return stats.IsDir()
+}
+
 func main() {
 	vm := java.NewVM()
 	for _, arg := range os.Args[1:] {
-		vm.LoadClass(arg)
+		if isDirectory(arg) {
+			vm.AddDirectory(arg)
+		} else {
+			vm.LoadClass(arg)
+		}
 	}
 	vm.Start()
 
