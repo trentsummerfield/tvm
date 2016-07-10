@@ -32,3 +32,4 @@ debug
 swap.py
 run
 *.class.std
+stdlib/META-INF/MANIFEST.MF
