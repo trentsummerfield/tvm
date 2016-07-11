@@ -128,6 +128,18 @@ func drawFrame(x, y int, frame *java.Frame) int {
 			drawString(x+xoffset, y+1+yoffset, fmt.Sprintf("%v", item.String()))
 			yoffset++
 		}
+
+		yoffset = 0
+		xoffset = 60
+		drawString(x+xoffset, y, "Local Variables")
+		for i, variables := range frame.Variables {
+			if variables == nil {
+				drawString(x+xoffset, y+1+yoffset, fmt.Sprintf("%2d <unintialized>", i))
+			} else {
+				drawString(x+xoffset, y+1+yoffset, fmt.Sprintf("%2d %v", i, variables.String()))
+			}
+			yoffset++
+		}
 	}
 	return offset
 }

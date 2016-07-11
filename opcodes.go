@@ -216,6 +216,8 @@ func bytesToOpcode(bytes []byte) OpCode {
 		return OpCode{b, "arraylength", nil}
 	case 191:
 		return OpCode{b, "athrow", nil}
+	case 192:
+		return OpCode{b, "checkcast", bytes[1:3]}
 	case 193:
 		return OpCode{b, "instanceof", bytes[1:3]}
 	case 194:

@@ -54,6 +54,7 @@ func main() {
 			var tvmOut bytes.Buffer
 			tvm.Stdout = &tvmOut
 			tvm.Stderr = os.Stderr
+			tvm.Stdin = os.Stdin
 			err = tvm.Run()
 			if err != nil {
 				fmt.Println("FAILED")

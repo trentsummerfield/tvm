@@ -16,7 +16,7 @@ type VM struct {
 	classes       []*Class
 	dirs          []string
 	activeMethod  *Method
-	nativeMethods map[string](func(*Frame, io.Writer))
+	nativeMethods map[string](func(*VM, *Frame, io.Writer))
 	frame         *Frame
 	stdout        io.Writer
 }
@@ -27,12 +27,12 @@ type Frame struct {
 	Class         *Class
 	Method        *Method
 	PC            *ProgramCounter
-	variables     []javaValue
+	Variables     []javaValue
 	Root          bool
 }
 
 func NewVM() (vm VM) {
-	vm.nativeMethods = map[string](func(*Frame, io.Writer)){
+	vm.nativeMethods = map[string](func(*VM, *Frame, io.Writer)){
 		"print":                   nativePrintString,
 		"printInt":                nativePrintInteger,
 		"printLong":               nativePrintLong,
@@ -41,6 +41,8 @@ func NewVM() (vm VM) {
 		"arraycopy":               nativeArrayCopy,
 		"desiredAssertionStatus0": nativeDesiredAssertionStatus,
 		"fillInStackTrace":        nativeFillInStackTrace,
+		"registerNatives":         nativeRegisterNatives,
+		"getClass":                nativeGetClass,
 	}
 	return vm
 }
@@ -101,53 +103,70 @@ func (vm *VM) Start() {
 	vm.execute(vm.activeMethod.class.Name(), vm.activeMethod.Name(), vm.activeMethod.RawSigniture, &frame, false, false)
 }
 
-func nativePrintString(f *Frame, w io.Writer) {
-	str := f.variables[0]
+func nativeStringToJavaString(vm *VM, str string) javaObject {
+	c := vm.resolveClass("java/lang/String")
+	ref := newInstance(c)
+	arrLen := len(str)
+	arr := make([]javaValue, arrLen)
+	for i, _ := range arr {
+		arr[i] = javaByte(str[i])
+	}
+	ref.fields["value"] = javaArray{contents: arr}
+	ref.fields["count"] = javaInt(arrLen)
+	return ref
+}
+
+func javaStringToNativeString(str javaObject) string {
+	f := str.getField("value", "[c").(javaArray)
+	bytes := make([]byte, len(f.contents))
+	for i, b := range f.contents {
+		bytes[i] = byte(b.(javaByte))
+	}
+	return string(bytes)
+}
+
+func nativePrintString(_ *VM, f *Frame, w io.Writer) {
+	str := f.Variables[0]
 	switch str := str.(type) {
 	default:
-		fmt.Printf("unexpected type %T", str)
+		log.Fatalf("unexpected type %T", str)
 	case javaObject:
-		f := str.getField("value", "[c").(javaArray)
-		bytes := make([]byte, len(f.contents))
-		for i, b := range f.contents {
-			bytes[i] = byte(b.(javaByte))
-		}
-		fmt.Fprint(w, string(bytes))
+		fmt.Fprint(w, javaStringToNativeString(str))
 	}
 	return
 }
 
-func nativePrintInteger(f *Frame, w io.Writer) {
-	i := f.variables[0].(javaInt).unbox()
+func nativePrintInteger(_ *VM, f *Frame, w io.Writer) {
+	i := f.Variables[0].(javaInt).unbox()
 	fmt.Fprintln(w, i)
 	return
 }
 
-func nativePrintLong(f *Frame, w io.Writer) {
-	i := f.variables[0].(javaLong).unbox()
+func nativePrintLong(_ *VM, f *Frame, w io.Writer) {
+	i := f.Variables[0].(javaLong).unbox()
 	fmt.Fprintln(w, i)
 	return
 }
 
-func nativePrintFloat(f *Frame, w io.Writer) {
-	float := f.variables[0].(javaFloat).unbox()
+func nativePrintFloat(_ *VM, f *Frame, w io.Writer) {
+	float := f.Variables[0].(javaFloat).unbox()
 	fmt.Fprintln(w, float)
 	return
 }
 
-func nativePrintChar(f *Frame, w io.Writer) {
-	i := f.variables[0].(javaInt).unbox()
+func nativePrintChar(_ *VM, f *Frame, w io.Writer) {
+	i := f.Variables[0].(javaInt).unbox()
 	fmt.Fprintf(w, "%c", i)
 	return
 }
 
-func nativeArrayCopy(f *Frame, w io.Writer) {
+func nativeArrayCopy(_ *VM, f *Frame, w io.Writer) {
 	// (Object src,  int  srcPos, Object dest, int destPos, int length)
-	src := f.variables[0].(javaArray).contents
-	i := f.variables[1].(javaInt).unbox()
-	dst := f.variables[2].(javaArray).contents
-	j := f.variables[3].(javaInt).unbox()
-	k := f.variables[4].(javaInt).unbox()
+	src := f.Variables[0].(javaArray).contents
+	i := f.Variables[1].(javaInt).unbox()
+	dst := f.Variables[2].(javaArray).contents
+	j := f.Variables[3].(javaInt).unbox()
+	k := f.Variables[4].(javaInt).unbox()
 
 	for l := int32(0); l < k; l++ {
 		dst[j+l] = src[i+l]
@@ -156,16 +175,56 @@ func nativeArrayCopy(f *Frame, w io.Writer) {
 	return
 }
 
-func nativeDesiredAssertionStatus(f *Frame, w io.Writer) {
+func nativeDesiredAssertionStatus(_ *VM, f *Frame, w io.Writer) {
 	f.PreviousFrame.pushInt32(0)
 	return
 }
 
-func nativeFillInStackTrace(f *Frame, w io.Writer) {
+func nativeFillInStackTrace(_ *VM, f *Frame, w io.Writer) {
 	// (Throwable t, int unused)
-	t := f.variables[0].(javaObject)
+	t := f.Variables[0].(javaObject)
 	t.setField("stackTrace", javaArray{null: true})
 	f.PreviousFrame.push(t)
+	return
+}
+
+func nativeRegisterNatives(vm *VM, f *Frame, w io.Writer) {
+}
+
+func (vm *VM) setupSystemClass() {
+	fd := vm.resolveClass("java/io/FileDescriptor")
+	fileStream := vm.construct("java/io/FileInputStream", fd.getField("in").value)
+	bufferedInputStream := vm.construct("java/io/BufferedInputStream", fileStream)
+	system := vm.resolveClass("java/lang/System")
+	system.getField("in").value = bufferedInputStream
+}
+
+func (vm *VM) construct(className string, arguments ...javaValue) javaObject {
+	var frame Frame
+	frame.Root = true
+	class := vm.resolveClass(className)
+	o := newInstance(class)
+	frame.push(o)
+	var descriptors []string
+	for _, arg := range arguments {
+		frame.push(arg)
+		switch arg := arg.(type) {
+		case javaObject:
+			descriptors = append(descriptors, "L"+arg.class().Name())
+		default:
+			log.Fatalf("Fuck i don't know how to convert a %T to a descriptor\n", arg)
+		}
+	}
+	descriptor := "(" + strings.Join(descriptors, ",") + ")L" + className + ";"
+	vm.execute(className, "<init>", descriptor, &frame, false, true)
+	return o
+}
+
+func nativeGetClass(vm *VM, f *Frame, w io.Writer) {
+	o := f.Variables[0].(javaObject)
+	classObject := newInstance(vm.resolveClass("java/lang/Class"))
+	classObject.setField("name", nativeStringToJavaString(vm, o.class().Name()))
+	f.PreviousFrame.push(classObject)
 	return
 }
 
@@ -218,19 +277,19 @@ func collectArgs(method *Method, frame *Frame) []javaValue {
 
 func newFrame(previousFrame *Frame, method *Method, args []javaValue) Frame {
 	var frame Frame
-	var variables int
+	var Variables int
 	if method.Native() {
-		variables = method.numArgs()
+		Variables = method.numArgs()
 		if !method.Static() {
-			variables += 1
+			Variables += 1
 		}
 	} else {
-		variables = int(method.Code.maxLocals)
+		Variables = int(method.Code.maxLocals)
 	}
-	frame.variables = make([]javaValue, variables)
+	frame.Variables = make([]javaValue, Variables)
 	offset := 0
 	for i, v := range args {
-		frame.variables[i+offset] = v
+		frame.Variables[i+offset] = v
 		_, isLong := v.(javaLong)
 		if isLong {
 			offset++
@@ -288,7 +347,7 @@ func (vm *VM) Step() {
 			if native == nil {
 				log.Panicf("Unknown native method %s", methodName)
 			}
-			native(vm.frame, vm.stdout)
+			native(vm, vm.frame, vm.stdout)
 			vm.frame = vm.frame.PreviousFrame
 		} else {
 			vm.frame = runByteCode(vm, vm.frame)
@@ -329,15 +388,7 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 			frame.pushFloat32(constant.value)
 		case stringConstant:
 			s := frame.Class.getStringAt(int(index - 1))
-			c := vm.resolveClass("java/lang/String")
-			ref := newInstance(c)
-			arrLen := len(s.contents)
-			arr := make([]javaValue, arrLen)
-			for i, _ := range arr {
-				arr[i] = javaByte(s.contents[i])
-			}
-			ref.fields["value"] = javaArray{contents: arr}
-			ref.fields["count"] = javaInt(arrLen)
+			ref := nativeStringToJavaString(vm, s.contents)
 			frame.push(ref)
 		case classInfo:
 			c := vm.resolveClass("java/lang/Class")
@@ -352,24 +403,24 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		frame.pushInt64(l.value)
 	case "iload", "aload":
 		index := op.int8()
-		frame.push(frame.variables[index])
+		frame.push(frame.Variables[index])
 	case "iload_0", "aload_0", "lload_0", "fload_0":
-		frame.push(frame.variables[0])
+		frame.push(frame.Variables[0])
 	case "iload_1", "aload_1", "lload_1", "fload_1":
-		frame.push(frame.variables[1])
+		frame.push(frame.Variables[1])
 	case "iload_2", "aload_2", "lload_2":
-		frame.push(frame.variables[2])
+		frame.push(frame.Variables[2])
 	case "iload_3", "aload_3", "lload_3":
-		frame.push(frame.variables[3])
+		frame.push(frame.Variables[3])
 	case "istore", "astore":
 		index := op.int8()
-		frame.variables[index] = frame.pop()
+		frame.Variables[index] = frame.pop()
 	case "istore_1", "astore_1":
-		frame.variables[1] = frame.pop()
+		frame.Variables[1] = frame.pop()
 	case "istore_2", "astore_2":
-		frame.variables[2] = frame.pop()
+		frame.Variables[2] = frame.pop()
 	case "istore_3", "astore_3":
-		frame.variables[3] = frame.pop()
+		frame.Variables[3] = frame.pop()
 	case "castore":
 		v := frame.popInt32()
 		i := frame.popInt32()
@@ -413,8 +464,8 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 	case "iinc":
 		index := op.args[0]
 		c := op.args[1]
-		i := frame.variables[index].(javaInt).unbox()
-		frame.variables[index] = javaInt(i + int32(c))
+		i := frame.Variables[index].(javaInt).unbox()
+		frame.Variables[index] = javaInt(i + int32(c))
 	case "ladd":
 		//TODO: make sure we do overflow correctly
 		x := frame.popInt64()
@@ -564,6 +615,21 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 		frame.pushInt32(int32(len(a.contents)))
 	case "athrow":
 		return handleException(vm, frame, frame.popObject())
+	case "checkcast":
+		o := frame.popReference()
+		if o.isNull() {
+			frame.pushReference(o)
+		} else {
+			classInfo := frame.Class.getClassInfoAt(op.uint16())
+			c := classInfo.className()
+			targetClass := vm.resolveClass(c)
+			if vm.implements(o.class(), targetClass) {
+				frame.pushReference(o)
+			} else {
+				//TODO: throw ClassCastException
+				log.Fatal("Class Cast Exception should be thrown here")
+			}
+		}
 	case "instanceof":
 		classInfo := frame.Class.getClassInfoAt(op.uint16())
 		c := classInfo.className()
@@ -595,6 +661,12 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 }
 
 func handleException(vm *VM, f *Frame, throwable javaObject) *Frame {
+	if f.Root {
+		f.push(throwable)
+		vm.execute(throwable.class().Name(), "toString", "()Ljava/lang/String;", f, false, true)
+		str := f.popObject()
+		log.Fatalf("Unhandled exception %s\n", javaStringToNativeString(str))
+	}
 	index := f.PC.CurrentByteCodeIndex()
 	match := false
 	for _, handler := range f.Method.Code.ExceptionHandlers {
@@ -639,10 +711,11 @@ func (vm *VM) initClass(c *Class, frame *Frame) {
 		return
 	}
 	c.initialised = true
-	vm.frame = buildFrame(vm, c.Name(), "<clinit>", "()V", frame, false)
-	for vm.frame != frame {
-		vm.Step()
-	}
+	fOld := vm.frame
+	var fNew Frame
+	fNew.Root = true
+	vm.execute(c.Name(), "<clinit>", "()V", &fNew, false, true)
+	vm.frame = fOld
 }
 
 type stack struct {
@@ -779,6 +852,10 @@ func (s *stack) popReference() javaReference {
 	return s.pop().(javaReference)
 }
 
+func (s *stack) pushReference(ref javaReference) {
+	s.push(ref.(javaValue))
+}
+
 type javaArray struct {
 	_class   *Class
 	contents []javaValue
@@ -796,7 +873,13 @@ func (a javaArray) class() *Class {
 func (_ javaArray) isJavaValue() {}
 
 func (a javaArray) String() string {
-	return "Array"
+	if a.isNull() {
+		return fmt.Sprintf("Array(<null>)")
+	}
+	if a.class() != nil {
+		return fmt.Sprintf("Array(%d,%s)", len(a.contents), a.class().Name())
+	}
+	return fmt.Sprintf("Array(%d,%T)", len(a.contents), a.contents)
 }
 
 func (s *stack) pushArray(a javaArray) {
@@ -846,9 +929,20 @@ func (o *javaObject) setField(name string, f javaValue) {
 func (_ javaObject) isJavaValue() {}
 
 func (o javaObject) String() string {
-	return "Object"
+	if o.isNull() {
+		return "Object(<null>)"
+	}
+	return fmt.Sprintf("Object(%s)", o.class().Name())
 }
 
 func (s *stack) popObject() javaObject {
 	return s.pop().(javaObject)
+}
+
+func (f *Frame) DebugOut() {
+	log.Printf("Stack %s::%s\n", f.Method.class.Name(), f.Method.Name())
+	log.Print("=====")
+	for i, o := range f.Items {
+		log.Printf("%3d %v", i, o.String())
+	}
 }

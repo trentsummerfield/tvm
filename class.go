@@ -271,6 +271,7 @@ func (c *Class) resolveMethod(name string, descriptor string) *Method {
 	for i, m := range c.methods {
 		n := c.ConstantPoolItems[m.nameIndex-1].(utf8String).contents
 		d := c.ConstantPoolItems[m.descriptorIndex-1].(utf8String).contents
+		//log.Printf("Comparing %v::%v to %v::%v\n", name, descriptor, n, d)
 		if n == name && d == descriptor {
 			return &c.methods[i]
 		}

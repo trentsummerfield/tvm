@@ -1,0 +1,12 @@
+- Web GUI
+	+ read from log a visualize
+	OR
+	+ use go to serve up a html view of the current
+	+ can we get sources so we can step through like a debugger
+- Remove vm.frame
+	+ frame should be explicit
+	+ vm.Step should return the current frame?
+- More packages?
+	+ package for javaValues
+	+ package for opcodes
+	+ etc
