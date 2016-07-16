@@ -74,12 +74,17 @@ func (vm *VM) LoadClass(path string) error {
 	return nil
 }
 
+func newRootFrame() Frame {
+	return Frame{
+		Root: true,
+	}
+}
+
 func (vm *VM) Run() {
 	vm.stdout = os.Stdout
-	var frame Frame
+	frame := newRootFrame()
 	//TODO: push the actual command line arguments onto the stack for the main method.
 	frame.push(nil)
-	frame.Root = true
 	//TODO: this is obviously completely wrong
 	for _, c := range vm.classes {
 		if c.hasMethodCalled("main") {
@@ -200,8 +205,7 @@ func (vm *VM) setupSystemClass() {
 }
 
 func (vm *VM) construct(className string, arguments ...javaValue) javaObject {
-	var frame Frame
-	frame.Root = true
+	frame := newRootFrame()
 	class := vm.resolveClass(className)
 	o := newInstance(class)
 	frame.push(o)
@@ -329,29 +333,37 @@ func buildFrame(vm *VM, className, methodName, descriptor string, previousFrame 
 	return &frame
 }
 
-func (vm *VM) execute(className, methodName, descriptor string, previousFrame *Frame, virtual bool, run bool) {
-	vm.frame = buildFrame(vm, className, methodName, descriptor, previousFrame, virtual)
+func (vm *VM) execute(className, methodName, descriptor string, previousFrame *Frame, virtual bool, run bool) *Frame {
+	frame := buildFrame(vm, className, methodName, descriptor, previousFrame, virtual)
 
 	if run {
-		for !vm.frame.Root {
-			vm.Step()
+		for frame != previousFrame {
+			frame = vm.advance(frame)
 		}
 	}
+
+	return frame
 }
 
 func (vm *VM) Step() {
-	if !vm.frame.Root {
-		if (vm.frame.Method.accessFlags & Native) != 0 {
-			methodName := vm.frame.Method.Name()
+	vm.frame = vm.advance(vm.frame)
+}
+
+func (vm *VM) advance(frame *Frame) *Frame {
+	if !frame.Root {
+		if (frame.Method.accessFlags & Native) != 0 {
+			methodName := frame.Method.Name()
 			native := vm.nativeMethods[methodName]
 			if native == nil {
 				log.Panicf("Unknown native method %s", methodName)
 			}
-			native(vm, vm.frame, vm.stdout)
-			vm.frame = vm.frame.PreviousFrame
+			native(vm, frame, vm.stdout)
+			return frame.PreviousFrame
 		} else {
-			vm.frame = runByteCode(vm, vm.frame)
+			return runByteCode(vm, frame)
 		}
+	} else {
+		return frame
 	}
 }
 
@@ -559,7 +571,7 @@ func runByteCode(vm *VM, frame *Frame) *Frame {
 	case "getstatic":
 		fieldRef := frame.Class.getFieldRefAt(op.uint16())
 		c := vm.resolveClass(fieldRef.className())
-		vm.initClass(c, frame)
+		vm.initClass(c)
 		f := c.getField(fieldRef.fieldName())
 		frame.push(f.value)
 	case "putstatic":
@@ -706,16 +718,13 @@ func newInstance(c *Class) javaObject {
 	return javaObject{_class: c, fields: make(map[string]javaValue)}
 }
 
-func (vm *VM) initClass(c *Class, frame *Frame) {
+func (vm *VM) initClass(c *Class) {
 	if c.initialised {
 		return
 	}
 	c.initialised = true
-	fOld := vm.frame
-	var fNew Frame
-	fNew.Root = true
-	vm.execute(c.Name(), "<clinit>", "()V", &fNew, false, true)
-	vm.frame = fOld
+	frame := newRootFrame()
+	vm.execute(c.Name(), "<clinit>", "()V", &frame, false, true)
 }
 
 type stack struct {
